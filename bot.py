@@ -66,10 +66,8 @@ def census_difference(census_before, census_after):
             after = after.score or 0.001
             yield title, ((after - before) / before) * 100
     
-    return (
-        f'{title:<35} {percentage:+.2f}%'
-        for title, percentage
-        in sorted(
+    mapping = (
+        sorted(
             islice(
                 sorted(
                     percentages(),
@@ -82,11 +80,23 @@ def census_difference(census_before, census_after):
             reverse=True
         )
     )
+    
+    for title, percentage in mapping:
+        highlight = arrow = ' '
+        if percentage > 0:
+            highlight = '+'
+            arrow = '↑'
+        elif percentage < 0:
+            highlight = '-'
+            arrow = '↓'
+        percentage = abs(percentage)
+        yield f'{highlight}{title:<35} {arrow}{percentage:.2f}%'
 
 
 async def close_issue(issue_channel, nation, issue, option):
     census_before = await nation.shard('census')
-    #await option.accept()
+    happening = await option.accept()
+    logger.info(f'answered issue {issue.id} for {nation.name}')
     census_after = await nation.shard('census')
     embed = discord.Embed(
         title=issue.title,
@@ -98,10 +108,15 @@ async def close_issue(issue_channel, nation, issue, option):
         name=':white_check_mark::',
         value=option.text
     )
+    if happening:
+        embed.add_field(
+            name=':pencil::',
+            value=happening
+        )
     embed.add_field(
         name=':chart_with_upwards_trend::',
         value=(
-            '```{}```'
+            '```diff\n{}\n```'
             .format('\n'.join(census_difference(census_before, census_after)))
         )
     )
