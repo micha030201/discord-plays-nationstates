@@ -2,6 +2,7 @@ import json
 import time
 import random
 import asyncio
+import traceback
 import logging.config
 from contextlib import suppress
 from datetime import datetime
@@ -26,15 +27,6 @@ client = discord.Client()
 async def on_ready():
     logger.info(f'Logged in as {client.user.name} ({client.user.id})')
     #await client.change_presence(game='NationStates')
-
-
-inconsistency_message = '''\
-There seems to be an inconsistency between the issues confronting {} and the \
-messages in this channel.
-Either someone's been answering issues on their own or deleting bot's messages.
-Or maybe there is an error in the code.
-
-No issue answered, opening the vote for a new one...'''
 
 
 def html_to_md(html):
@@ -168,16 +160,13 @@ def vote_results(message, issue):
 
 async def issue_cycle(nation, issue_channel, inform_channel):
     s = await nation.shards('issues', 'flag')
-    issues = s['issues']
-    issues = sorted(issues, key=itemgetter(0), reverse=True)
+    issues = list(reversed(s['issues']))
     
     async for message in client.logs_from(issue_channel, limit=50):
         if (message.author == client.user and
                 message.content.startswith('Issue #')):
             if not message.content == f'Issue #{issues[0].id}:':
                 logger.warn(f'message issue discrepancy for {nation.name}')
-                client.send_message(issue_channel,
-                                    inconsistency_message.format(nation.name))
                 await open_issue(issue_channel, issues[0], s['flag'], inform_channel)
                 logger.info(f'open recovery issue {issues[0].id} for {nation.name}')
                 return
@@ -213,7 +202,7 @@ async def issue_cycle_loop(server):
         try:
             await issue_cycle(nation, issue_channel, inform_channel)
         except:
-            logger.error('\n' + traceback.format_exc())
+            logger.error(f'for {nation.name}:\n' + traceback.format_exc())
         
         logger.info(f'end cycle for {nation.name}')
         finished_at = time.time()
