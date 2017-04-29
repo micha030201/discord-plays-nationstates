@@ -34,25 +34,31 @@ Or maybe there is an error in the code.
 
 No issue answered, opening the vote for a new one...'''
 
-new_issue_message = 
+
+def html_to_md(html):
+    return (
+        html
+        .replace('<i>', '*')
+        .replace('</i>', '*')
+    )
 
 
 number_to_emoji = {
-    1: ':one:',
-    2: ':two:',
-    3: ':three:',
-    4: ':four:',
-    5: ':five:',
-    6: ':six:',
-    7: ':seven:',
-    8: ':eight:',
-    9: ':nine:',
-    10: ':ten:'
+    0: '1⃣',
+    1: '2⃣',
+    2: '3⃣',
+    3: '4⃣',
+    4: '5⃣',
+    5: '6⃣',
+    6: '7⃣',
+    7: '8⃣',
+    8: '9⃣',
+    9: '🔟'
 }
 emoji_to_number = dict(reversed(i) for i in number_to_emoji.items())
 
 
-def census(census_before, census_after):
+def census_difference(census_before, census_after):
     def percentages():
         for before, after in zip(census_before, census_after):
             title = before.info.title
@@ -61,7 +67,7 @@ def census(census_before, census_after):
             yield title, ((after - before) / before) * 100
     
     return (
-        f'{title:<35} {percentage:.2f}%'
+        f'{title:<35} {percentage:+.2f}%'
         for title, percentage
         in sorted(
             islice(
@@ -78,10 +84,10 @@ def census(census_before, census_after):
     )
 
 
-async def close_issue(issue_channel, issue, option):
-    census_before = await s.shard('census')
-    await option.accept()
-    census_after = await s.shard('census')
+async def close_issue(issue_channel, nation, issue, option):
+    census_before = await nation.shard('census')
+    #await option.accept()
+    census_after = await nation.shard('census')
     embed = discord.Embed(
         title=issue.title,
         description=issue.text,
@@ -94,9 +100,16 @@ async def close_issue(issue_channel, issue, option):
     )
     embed.add_field(
         name=':chart_with_upwards_trend::',
-        value=option.text
+        value=(
+            '```{}```'
+            .format('\n'.join(census_difference(census_before, census_after)))
+        )
     )
-    await client.send_message('Legislation Passed:', embed=embed)
+    await client.send_message(
+        issue_channel,
+        'Legislation Passed:',
+        embed=embed
+    )
 
 async def open_issue(issue_channel, issue, flag, inform_channel):
     embed = discord.Embed(
@@ -113,62 +126,59 @@ async def open_issue(issue_channel, issue, flag, inform_channel):
     for i, option in enumerate(issue.options):
         embed.add_field(
             name=number_to_emoji[i] + ':',
-            value=option.text
+            value=html_to_md(option.text)
         )
 
-    message = await client.send_message(f'Issue #{issue.id}:', embed=embed)
-    for i in range(len(options)):
+    message = await client.send_message(
+        issue_channel,
+        f'Issue #{issue.id}:',
+        embed=embed
+    )
+    for i in range(len(issue.options)):
         await client.add_reaction(message, number_to_emoji[i])
     await client.send_message(
         inform_channel,
-        f'New issue: **{issues[1]}**\n'
+        f'New issue: **{issue.title}**\n'
         f'Head over to {issue_channel.mention} for more.'
     )
 
 def vote_results(message, issue):
     for i, (reaction, option) in enumerate(zip(message.reactions,
                                                issue.options)):
-        print(reaction.emoji)
-        assert emoji_to_number(reaction.emoji) == i
+        assert reaction.emoji == number_to_emoji[i]
         yield option, reaction.count
 
 
-async def issue_cycle(nation, issues_channel, inform_channel):
+async def issue_cycle(nation, issue_channel, inform_channel):
     s = await nation.shards('issues', 'flag')
     issues = s['issues']
     
-    async for message in client.logs_from(issues_channel, limit=50):
+    async for message in client.logs_from(issue_channel, limit=50):
         if (message.author == client.user and
                 message.content.startswith('Issue #')):
-            if not message.content.startswith(f'Issue #{issue.id}:'):
+            if not message.content == f'Issue #{issues[0].id}:':
+                print(message.content)
+                print(f'Issue #{issues[0].id}:')
                 logger.warn(f'message issue discrepancy for {nation.name}')
-                client.send_message(issues_channel,
+                client.send_message(issue_channel,
                                     inconsistency_message.format(nation.name))
-                await open_issue(issue_channel, issues[0], flag)
+                await open_issue(issue_channel, issues[0], s['flag'])
                 return
             option, _ = max(vote_results(message, issues[0]), key=itemgetter(1))
-            await close_issue(issue_channel, issues[0], option)
+            await close_issue(issue_channel, nation, issues[0], option)
             logger.info(f'close issue {issues[0].id} for {nation.name}')
-            await open_issue(issue_channel, issues[1], flag)
+            await open_issue(issue_channel, issues[1], s['flag'], inform_channel)
             logger.info(f'open issue {issues[1].id} for {nation.name}')
-            await client.send_message(
-                inform_channel,
-                new_issue_message.format(issues[1], issue_channel.mention)
-            )
             return
-    logger.info(f'open first issue {issues[1].id} for {nation.name}')
-    await open_issue(issue_channel, issues[1], flag)
-
+    logger.info(f'open first issue {issues[0].id} for {nation.name}')
+    await open_issue(issue_channel, issues[0], s['flag'], inform_channel)
     return
-    
-    await client.send_message(channel, counter)
-    
 
 
 async def issue_cycle_loop(server):
     await client.wait_until_ready()
     
-    issues_channel = client.get_channel(server['ISSUES_CHANNEL'])
+    issue_channel = client.get_channel(server['ISSUES_CHANNEL'])
     inform_channel = client.get_channel(server['INFORM_CHANNEL'])
     
     nation = NationControl(server['NATION'], autologin=server['AUTOLOGIN'])
@@ -176,7 +186,7 @@ async def issue_cycle_loop(server):
         logger.info(f'started cycle for {nation.name}')
         started_at = time.time()
         
-        await issue_cycle(nation, issues_channel, inform_channel)
+        await issue_cycle(nation, issue_channel, inform_channel)
         
         finished_at = time.time()
         delta = finished_at - started_at
@@ -184,7 +194,7 @@ async def issue_cycle_loop(server):
 
 
 for server in config['SERVERS']:
-    client.loop.create_task(issue_cycle(server))
+    client.loop.create_task(issue_cycle_loop(server))
 
 
 if __name__ == "__main__":
