@@ -1,5 +1,6 @@
 import json
 import time
+import random
 import asyncio
 import logging.config
 from contextlib import suppress
@@ -24,6 +25,7 @@ client = discord.Client()
 @client.event
 async def on_ready():
     logger.info(f'Logged in as {client.user.name} ({client.user.id})')
+    #await client.change_presence(game='NationStates')
 
 
 inconsistency_message = '''\
@@ -96,7 +98,7 @@ def census_difference(census_before, census_after):
 async def close_issue(issue_channel, nation, issue, option):
     census_before = await nation.shard('census')
     happening = await option.accept()
-    logger.info(f'answered issue {issue.id} for {nation.name}')
+    logger.info(f'answer issue {issue.id} for {nation.name}')
     census_after = await nation.shard('census')
     embed = discord.Embed(
         title=issue.title,
@@ -167,19 +169,23 @@ def vote_results(message, issue):
 async def issue_cycle(nation, issue_channel, inform_channel):
     s = await nation.shards('issues', 'flag')
     issues = s['issues']
+    issues = sorted(issues, key=itemgetter(0), reverse=True)
     
     async for message in client.logs_from(issue_channel, limit=50):
         if (message.author == client.user and
                 message.content.startswith('Issue #')):
             if not message.content == f'Issue #{issues[0].id}:':
-                print(message.content)
-                print(f'Issue #{issues[0].id}:')
                 logger.warn(f'message issue discrepancy for {nation.name}')
                 client.send_message(issue_channel,
                                     inconsistency_message.format(nation.name))
-                await open_issue(issue_channel, issues[0], s['flag'])
+                await open_issue(issue_channel, issues[0], s['flag'], inform_channel)
+                logger.info(f'open recovery issue {issues[0].id} for {nation.name}')
                 return
-            option, _ = max(vote_results(message, issues[0]), key=itemgetter(1))
+            results = list(vote_results(message, issues[0]))
+            _, max_votes = max(results, key=itemgetter(1))
+            option = random.choice(
+                [option for option, votes in results if votes == max_votes])
+            
             await close_issue(issue_channel, nation, issues[0], option)
             logger.info(f'close issue {issues[0].id} for {nation.name}')
             await open_issue(issue_channel, issues[1], s['flag'], inform_channel)
@@ -196,13 +202,20 @@ async def issue_cycle_loop(server):
     issue_channel = client.get_channel(server['ISSUES_CHANNEL'])
     inform_channel = client.get_channel(server['INFORM_CHANNEL'])
     
+    with suppress(discord.Forbidden):
+        await client.change_nickname(issue_channel.server.me, server['NATION'])
+    
     nation = NationControl(server['NATION'], autologin=server['AUTOLOGIN'])
     while not client.is_closed:
-        logger.info(f'started cycle for {nation.name}')
+        logger.info(f'start cycle for {nation.name}')
         started_at = time.time()
         
-        await issue_cycle(nation, issue_channel, inform_channel)
+        try:
+            await issue_cycle(nation, issue_channel, inform_channel)
+        except:
+            logger.error('\n' + traceback.format_exc())
         
+        logger.info(f'end cycle for {nation.name}')
         finished_at = time.time()
         delta = finished_at - started_at
         await asyncio.sleep(server['ISSUE_PERIOD'] - delta)
