@@ -96,7 +96,7 @@ async def close_issue(issue_channel, nation, issue, option):
         title=issue.title,
         description=issue.text,
         colour=discord.Colour(0xde3831),
-        timestamp=datetime.now()
+        timestamp=datetime.utcnow()
     )
     embed.add_field(
         name=':white_check_mark::',
@@ -123,9 +123,9 @@ async def close_issue(issue_channel, nation, issue, option):
 async def open_issue(issue_channel, issue, flag, inform_channel):
     embed = discord.Embed(
         title=issue.title,
-        description=issue.text,
+        description=html_to_md(issue.text),
         colour=discord.Colour(0xfdc82f),
-        timestamp=datetime.now()
+        timestamp=utcdatetime.now()
     )
 
     # TODO this
@@ -158,31 +158,32 @@ def vote_results(message, issue):
         yield option, reaction.count
 
 
+async def get_last_issue_message(issue_channel)
+    async for message in client.logs_from(issue_channel, limit=50):
+        if (message.author == client.user and
+                message.content.startswith('Issue #')):
+            if message.content == f'Issue #{issues[0].id}:':
+                return message
+            logger.warn(f'message issue discrepancy for {nation.name}')
+
 async def issue_cycle(nation, issue_channel, inform_channel):
     s = await nation.shards('issues', 'flag')
     issues = list(reversed(s['issues']))
     
-    async for message in client.logs_from(issue_channel, limit=50):
-        if (message.author == client.user and
-                message.content.startswith('Issue #')):
-            if not message.content == f'Issue #{issues[0].id}:':
-                logger.warn(f'message issue discrepancy for {nation.name}')
-                await open_issue(issue_channel, issues[0], s['flag'], inform_channel)
-                logger.info(f'open recovery issue {issues[0].id} for {nation.name}')
-                return
-            results = list(vote_results(message, issues[0]))
-            _, max_votes = max(results, key=itemgetter(1))
-            option = random.choice(
-                [option for option, votes in results if votes == max_votes])
-            
-            await close_issue(issue_channel, nation, issues[0], option)
-            logger.info(f'close issue {issues[0].id} for {nation.name}')
-            await open_issue(issue_channel, issues[1], s['flag'], inform_channel)
-            logger.info(f'open issue {issues[1].id} for {nation.name}')
-            return
-    logger.info(f'open first issue {issues[0].id} for {nation.name}')
+    last_issue_message = await get_last_issue_message(issue_channel)
+    if last_issue_message:
+        results = list(vote_results(last_issue_message, issues[0]))
+        _, max_votes = max(results, key=itemgetter(1))
+        option = random.choice(
+            [option for option, votes in results if votes == max_votes])
+        
+        await close_issue(issue_channel, nation, issues[0], option)
+        logger.info(f'close issue {issues[0].id} for {nation.name}')
+        await open_issue(issue_channel, issues[1], s['flag'], inform_channel)
+        logger.info(f'open issue {issues[1].id} for {nation.name}')
+        return
     await open_issue(issue_channel, issues[0], s['flag'], inform_channel)
-    return
+    logger.info(f'open issue {issues[0].id} for {nation.name}')
 
 
 async def issue_cycle_loop(server):
