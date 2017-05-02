@@ -34,6 +34,7 @@ def html_to_md(html):
         html
         .replace('<i>', '*')
         .replace('</i>', '*')
+        .replace('&quot;', '"')
     )
 
 
@@ -105,7 +106,7 @@ async def close_issue(issue_channel, nation, issue, option):
     if happening:
         embed.add_field(
             name=':pencil::',
-            value=happening
+            value=html_to_md(happening)
         )
     embed.add_field(
         name=':chart_with_upwards_trend::',
@@ -125,7 +126,7 @@ async def open_issue(issue_channel, issue, flag, inform_channel):
         title=issue.title,
         description=html_to_md(issue.text),
         colour=discord.Colour(0xfdc82f),
-        timestamp=utcdatetime.now()
+        timestamp=datetime.utcnow()
     )
 
     # TODO this
@@ -158,20 +159,19 @@ def vote_results(message, issue):
         yield option, reaction.count
 
 
-async def get_last_issue_message(issue_channel)
+async def get_last_issue_message(issue_channel):
     async for message in client.logs_from(issue_channel, limit=50):
         if (message.author == client.user and
                 message.content.startswith('Issue #')):
-            if message.content == f'Issue #{issues[0].id}:':
-                return message
-            logger.warn(f'message issue discrepancy for {nation.name}')
+            return message
 
 async def issue_cycle(nation, issue_channel, inform_channel):
     s = await nation.shards('issues', 'flag')
     issues = list(reversed(s['issues']))
     
     last_issue_message = await get_last_issue_message(issue_channel)
-    if last_issue_message:
+    if (last_issue_message and
+            last_issue_message.content == f'Issue #{issues[0].id}:'):
         results = list(vote_results(last_issue_message, issues[0]))
         _, max_votes = max(results, key=itemgetter(1))
         option = random.choice(
@@ -181,9 +181,9 @@ async def issue_cycle(nation, issue_channel, inform_channel):
         logger.info(f'close issue {issues[0].id} for {nation.name}')
         await open_issue(issue_channel, issues[1], s['flag'], inform_channel)
         logger.info(f'open issue {issues[1].id} for {nation.name}')
-        return
-    await open_issue(issue_channel, issues[0], s['flag'], inform_channel)
-    logger.info(f'open issue {issues[0].id} for {nation.name}')
+    else:
+        await open_issue(issue_channel, issues[0], s['flag'], inform_channel)
+        logger.info(f'open first/rec issue {issues[0].id} for {nation.name}')
 
 
 async def issue_cycle_loop(server):
@@ -196,6 +196,17 @@ async def issue_cycle_loop(server):
         await client.change_nickname(issue_channel.server.me, server['NATION'])
     
     nation = NationControl(server['NATION'], autologin=server['AUTOLOGIN'])
+    
+    now = datetime.utcnow()
+    today_seconds = (
+        now.timestamp()
+        - now.replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+    )
+    to_sleep = server['ISSUE_PERIOD'] - today_seconds % server['ISSUE_PERIOD']
+    logger.info(f'sleeping {to_sleep} seconds before starting the'
+                f' issue cycle loop for {nation.name}')
+    await asyncio.sleep(to_sleep)
+
     while not client.is_closed:
         logger.info(f'start cycle for {nation.name}')
         started_at = time.time()
