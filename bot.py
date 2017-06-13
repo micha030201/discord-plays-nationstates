@@ -53,19 +53,15 @@ number_to_emoji = {
 emoji_to_number = dict(reversed(i) for i in number_to_emoji.items())
 
 
-def census_difference(census_before, census_after):
-    def percentages():
-        for before, after in zip(census_before, census_after):
-            title = before.info.title
-            before = before.score or 0.001
-            after = after.score or 0.001
-            yield title, ((after - before) / before) * 100
-    
+def census_difference(census_change):
     mapping = (
         sorted(
             islice(
                 sorted(
-                    percentages(),
+                    (
+                        (scale.info.title, scale.pchange)
+                        for scale in census_change
+                    ),
                     key=lambda x: abs(x[1]),
                     reverse=True
                 ),
@@ -89,36 +85,56 @@ def census_difference(census_before, census_after):
 
 
 async def close_issue(issue_channel, nation, issue, option):
-    census_before = await nation.shard('census')
-    happening = await option.accept()
-    logger.info(f'answer issue {issue.id} for {nation.name}')
-    census_after = await nation.shard('census')
+    issue_result = await option.accept()
+    logger.info(f'answer issue {issue.id} for {nation.id}')
     embed = discord.Embed(
         title=issue.title,
-        description=issue.text,
+        description=html_to_md(issue.text),
         colour=discord.Colour(0xde3831),
         timestamp=datetime.utcnow()
     )
     embed.add_field(
         name=':white_check_mark::',
-        value=option.text
+        inline=False,
+        value=html_to_md(option.text)
     )
-    if happening:
+    if issue_result.desc:
         embed.add_field(
             name=':pencil::',
-            value=html_to_md(happening)
+            inline=False,
+            value=html_to_md(issue_result.desc.capitalize() + '.')
         )
-    embed.add_field(
-        name=':chart_with_upwards_trend::',
-        value=(
-            '```diff\n{}\n```'
-            .format('\n'.join(census_difference(census_before, census_after)))
+    if issue_result.headlines:
+        embed.add_field(
+            name=':newspaper::',
+            inline=False,
+            value=(
+                ';\n'
+                .join((
+                    html_to_md(headline)
+                    for headline in issue_result.headlines
+                ))
+            )
         )
-    )
+    if issue_result.rankings:
+        embed.add_field(
+            name=':chart_with_upwards_trend::',
+            inline=False,
+            value=(
+                '```diff\n{}\n```'
+                .format('\n'.join(census_difference(issue_result.rankings)))
+            )
+        )
+    if issue_result.unlocks:
+        embed.set_image(url=random.choice(issue_result.unlocks))
     await client.send_message(
         issue_channel,
         'Legislation Passed:',
         embed=embed
+    )
+    print(
+        issue_result.unlocks,
+        
     )
 
 async def open_issue(issue_channel, issue, flag, inform_channel):
@@ -129,8 +145,10 @@ async def open_issue(issue_channel, issue, flag, inform_channel):
         timestamp=datetime.utcnow()
     )
 
-    # TODO this
-    #embed.set_image(url=)
+    print(issue.banners)
+    if issue.banners:
+        embed.set_image(url=issue.banners[0])
+
     embed.set_thumbnail(url=flag)
 
     for i, option in enumerate(issue.options):
@@ -166,8 +184,8 @@ async def get_last_issue_message(issue_channel):
             return message
 
 async def issue_cycle(nation, issue_channel, inform_channel):
-    s = await nation.shards('issues', 'flag')
-    issues = list(reversed(s['issues']))
+    issues, flag = await (nation.issues() + nation.flag())
+    issues = list(reversed(issues))
     
     last_issue_message = await get_last_issue_message(issue_channel)
     if (last_issue_message and
@@ -176,14 +194,14 @@ async def issue_cycle(nation, issue_channel, inform_channel):
         _, max_votes = max(results, key=itemgetter(1))
         option = random.choice(
             [option for option, votes in results if votes == max_votes])
-        
+
         await close_issue(issue_channel, nation, issues[0], option)
-        logger.info(f'close issue {issues[0].id} for {nation.name}')
-        await open_issue(issue_channel, issues[1], s['flag'], inform_channel)
-        logger.info(f'open issue {issues[1].id} for {nation.name}')
+        logger.info(f'close issue {issues[0].id} for {nation.id}')
+        await open_issue(issue_channel, issues[1], flag, inform_channel)
+        logger.info(f'open next issue {issues[1].id} for {nation.id}')
     else:
-        await open_issue(issue_channel, issues[0], s['flag'], inform_channel)
-        logger.info(f'open first/rec issue {issues[0].id} for {nation.name}')
+        await open_issue(issue_channel, issues[0], flag, inform_channel)
+        logger.info(f'open first issue {issues[0].id} for {nation.id}')
 
 
 async def issue_cycle_loop(server):
@@ -195,7 +213,11 @@ async def issue_cycle_loop(server):
     with suppress(discord.Forbidden):
         await client.change_nickname(issue_channel.server.me, server['NATION'])
     
-    nation = NationControl(server['NATION'], autologin=server['AUTOLOGIN'])
+    nation = NationControl(
+        server['NATION'],
+        autologin=server.get('AUTOLOGIN') or '',
+        password=server.get('PASSWORD') or ''
+    )
     
     now = datetime.utcnow()
     today_seconds = (
@@ -204,19 +226,19 @@ async def issue_cycle_loop(server):
     )
     to_sleep = server['ISSUE_PERIOD'] - today_seconds % server['ISSUE_PERIOD']
     logger.info(f'sleeping {to_sleep} seconds before starting the'
-                f' issue cycle loop for {nation.name}')
-    await asyncio.sleep(to_sleep)
+                f' issue cycle loop for {nation.id}')
+    #await asyncio.sleep(to_sleep)
 
     while not client.is_closed:
-        logger.info(f'start cycle for {nation.name}')
+        logger.info(f'start cycle for {nation.id}')
         started_at = time.time()
         
         try:
             await issue_cycle(nation, issue_channel, inform_channel)
         except:
-            logger.error(f'for {nation.name}:\n' + traceback.format_exc())
+            logger.error(f'for {nation.id}:\n' + traceback.format_exc())
         
-        logger.info(f'end cycle for {nation.name}')
+        logger.info(f'end cycle for {nation.id}')
         finished_at = time.time()
         delta = finished_at - started_at
         await asyncio.sleep(server['ISSUE_PERIOD'] - delta)
