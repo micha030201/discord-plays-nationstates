@@ -83,7 +83,7 @@ def census_difference(census_change):
         yield f'{highlight}{title:<35} {arrow}{percentage:.2f}%'
 
 
-async def close_issue(issue_channel, nation, issue, option):
+async def close_issue(issue, option):
     issue_result = await option.accept()
     logger.info(f'answer issue {issue.id} for {nation.id}')
     embed = discord.Embed(
@@ -132,12 +132,9 @@ async def close_issue(issue_channel, nation, issue, option):
         'Legislation Passed:',
         embed=embed
     )
-    print(
-        issue_result.unlocks,
-        
-    )
 
-async def open_issue(issue_channel, issue, flag, inform_channel):
+
+async def open_issue(issue):
     embed = discord.Embed(
         title=issue.title,
         description=html_to_md(issue.text),
@@ -145,11 +142,10 @@ async def open_issue(issue_channel, issue, flag, inform_channel):
         timestamp=datetime.utcnow()
     )
 
-    print(issue.banners)
     if issue.banners:
         embed.set_image(url=issue.banners[0])
 
-    embed.set_thumbnail(url=flag)
+    embed.set_thumbnail(url=await nation.flag())
 
     for i, option in enumerate(issue.options):
         embed.add_field(
@@ -183,8 +179,21 @@ async def get_last_issue_message(issue_channel):
                 message.content.startswith('Issue #')):
             return message
 
-async def issue_cycle(nation, issue_channel, inform_channel):
-    issues, flag = await (nation.issues() + nation.flag())
+
+def wait_until_first_issue():
+    now = datetime.utcnow()
+    today_seconds = (
+        now.timestamp()
+        - now.replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+    )
+    to_sleep = config['ISSUE_PERIOD'] - today_seconds % config['ISSUE_PERIOD']
+    logger.info(f'sleeping {to_sleep} seconds before starting the'
+                f' issue cycle loop for {nation.id}')
+    return asyncio.sleep(to_sleep)
+
+
+async def issue_cycle():
+    issues = await nation.issues()
     issues = list(reversed(issues))
     
     last_issue_message = await get_last_issue_message(issue_channel)
@@ -195,39 +204,36 @@ async def issue_cycle(nation, issue_channel, inform_channel):
         option = random.choice(
             [option for option, votes in results if votes == max_votes])
 
-        await close_issue(issue_channel, nation, issues[0], option)
+        await close_issue(issues[0], option)
         logger.info(f'close issue {issues[0].id} for {nation.id}')
-        await open_issue(issue_channel, issues[1], flag, inform_channel)
+        await open_issue(issues[1])
         logger.info(f'open next issue {issues[1].id} for {nation.id}')
     else:
-        await open_issue(issue_channel, issues[0], flag, inform_channel)
+        await open_issue(issues[0])
         logger.info(f'open first issue {issues[0].id} for {nation.id}')
 
 
-async def issue_cycle_loop(server):
+async def issue_cycle_loop():
     await client.wait_until_ready()
-    
-    issue_channel = client.get_channel(server['ISSUES_CHANNEL'])
-    inform_channel = client.get_channel(server['INFORM_CHANNEL'])
+
+    global issue_channel, inform_channel, nation
+
+    issue_channel = client.get_channel(config['ISSUES_CHANNEL'])
+    inform_channel = client.get_channel(config['INFORM_CHANNEL'])
 
     nation = NationControl(
-        server['NATION'],
-        autologin=server.get('AUTOLOGIN') or '',
-        password=server.get('PASSWORD') or ''
+        config['NATION'],
+        autologin=config.get('AUTOLOGIN') or '',
+        password=config.get('PASSWORD') or ''
     )
 
     await client.change_presence(game=discord.Game(name='NationStates'))
-    await client.edit_profile(username=await nation.name())
 
-    now = datetime.utcnow()
-    today_seconds = (
-        now.timestamp()
-        - now.replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
-    )
-    to_sleep = server['ISSUE_PERIOD'] - today_seconds % server['ISSUE_PERIOD']
-    logger.info(f'sleeping {to_sleep} seconds before starting the'
-                f' issue cycle loop for {nation.id}')
-    await asyncio.sleep(to_sleep)
+    nation_name = await nation.name()
+    if not client.user.name == nation_name:  # ratelimit :(
+        await client.edit_profile(username=nation_name)
+
+    #await wait_until_first_issue()
 
     while not client.is_closed:
         logger.info(f'start cycle for {nation.id}')
@@ -241,11 +247,10 @@ async def issue_cycle_loop(server):
         logger.info(f'end cycle for {nation.id}')
         finished_at = time.time()
         delta = finished_at - started_at
-        await asyncio.sleep(server['ISSUE_PERIOD'] - delta)
+        await asyncio.sleep(config['ISSUE_PERIOD'] - delta)
 
 
-for server in config['SERVERS']:
-    client.loop.create_task(issue_cycle_loop(server))
+client.loop.create_task(issue_cycle_loop())
 
 
 if __name__ == "__main__":
