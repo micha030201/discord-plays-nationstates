@@ -125,8 +125,9 @@ async def close_issue(issue_channel, nation, issue, option):
                 .format('\n'.join(census_difference(issue_result.rankings)))
             )
         )
-    if issue_result.unlocks:
-        embed.set_image(url=random.choice(issue_result.unlocks))
+    for banner in issue_result.unlocks:
+            await client.send_message(issue_channel,
+                                      f'New banner unlocked: {banner}')
     await client.send_message(
         issue_channel,
         'Legislation Passed:',
@@ -227,7 +228,7 @@ async def issue_cycle_loop(server):
     to_sleep = server['ISSUE_PERIOD'] - today_seconds % server['ISSUE_PERIOD']
     logger.info(f'sleeping {to_sleep} seconds before starting the'
                 f' issue cycle loop for {nation.id}')
-    #await asyncio.sleep(to_sleep)
+    await asyncio.sleep(to_sleep)
 
     while not client.is_closed:
         logger.info(f'start cycle for {nation.id}')
