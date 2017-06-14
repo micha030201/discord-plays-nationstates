@@ -26,7 +26,6 @@ client = discord.Client()
 @client.event
 async def on_ready():
     logger.info(f'Logged in as {client.user.name} ({client.user.id})')
-    #await client.change_presence(game='NationStates')
 
 
 def html_to_md(html):
@@ -210,16 +209,16 @@ async def issue_cycle_loop(server):
     
     issue_channel = client.get_channel(server['ISSUES_CHANNEL'])
     inform_channel = client.get_channel(server['INFORM_CHANNEL'])
-    
-    with suppress(discord.Forbidden):
-        await client.change_nickname(issue_channel.server.me, server['NATION'])
-    
+
     nation = NationControl(
         server['NATION'],
         autologin=server.get('AUTOLOGIN') or '',
         password=server.get('PASSWORD') or ''
     )
-    
+
+    await client.change_presence(game=discord.Game(name='NationStates'))
+    await client.edit_profile(username=await nation.name())
+
     now = datetime.utcnow()
     today_seconds = (
         now.timestamp()
