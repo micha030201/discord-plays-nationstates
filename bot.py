@@ -31,6 +31,7 @@ async def on_ready():
 def html_to_md(html):
     return (
         html
+        .replace('*', '\*')
         .replace('<i>', '*')
         .replace('</i>', '*')
         .replace('&quot;', '"')
@@ -70,7 +71,6 @@ def census_difference(census_change):
             reverse=True
         )
     )
-    
     for title, percentage in mapping:
         highlight = arrow = ' '
         if percentage > 0:
@@ -92,6 +92,7 @@ async def close_issue(issue, option):
         colour=discord.Colour(0xde3831),
         timestamp=datetime.utcnow()
     )
+
     embed.add_field(
         name=':white_check_mark::',
         inline=False,
@@ -145,7 +146,7 @@ async def open_issue(issue):
     if issue.banners:
         embed.set_image(url=issue.banners[0])
 
-    embed.set_thumbnail(url=await nation.flag())
+    embed.set_thumbnail(url=nation_flag)
 
     for i, option in enumerate(issue.options):
         embed.add_field(
@@ -193,7 +194,13 @@ def wait_until_first_issue():
 
 
 async def issue_cycle():
-    issues = await nation.issues()
+    global nation_flag
+
+    nation_name, nation_flag, issues = await (
+        nation.name() + nation.flag() + nation.issues())
+    if not client.user.name == nation_name:  # ratelimit :(
+        await client.edit_profile(username=nation_name)
+
     issues = list(reversed(issues))
     
     last_issue_message = await get_last_issue_message(issue_channel)
@@ -229,18 +236,14 @@ async def issue_cycle_loop():
 
     await client.change_presence(game=discord.Game(name='NationStates'))
 
-    nation_name = await nation.name()
-    if not client.user.name == nation_name:  # ratelimit :(
-        await client.edit_profile(username=nation_name)
-
-    #await wait_until_first_issue()
+    await wait_until_first_issue()
 
     while not client.is_closed:
         logger.info(f'start cycle for {nation.id}')
         started_at = time.time()
         
         try:
-            await issue_cycle(nation, issue_channel, inform_channel)
+            await issue_cycle()
         except:
             logger.error(f'for {nation.id}:\n' + traceback.format_exc())
         
