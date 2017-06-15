@@ -13,19 +13,7 @@ import discord
 from aionationstates import NationControl
 
 
-with open('config.json') as f:
-    config = json.load(f)
-
-with suppress(KeyError):
-    logging.config.dictConfig(config['LOGGING'])
-
 logger = logging.getLogger('discord-plays-nationstates')
-client = discord.Client()
-
-
-@client.event
-async def on_ready():
-    logger.info(f'Logged in as {client.user.name} ({client.user.id})')
 
 
 def html_to_md(html):
@@ -83,90 +71,6 @@ def census_difference(census_change):
         yield f'{highlight}{title:<35} {arrow}{percentage:.2f}%'
 
 
-async def close_issue(issue, option):
-    issue_result = await option.accept()
-    logger.info(f'answer issue {issue.id} for {nation.id}')
-    embed = discord.Embed(
-        title=issue.title,
-        description=html_to_md(issue.text),
-        colour=discord.Colour(0xde3831),
-        timestamp=datetime.utcnow()
-    )
-
-    embed.add_field(
-        name=':white_check_mark::',
-        inline=False,
-        value=html_to_md(option.text)
-    )
-    if issue_result.desc:
-        embed.add_field(
-            name=':pencil::',
-            inline=False,
-            value=html_to_md(issue_result.desc.capitalize() + '.')
-        )
-    if issue_result.headlines:
-        embed.add_field(
-            name=':newspaper::',
-            inline=False,
-            value=(
-                ';\n'
-                .join((
-                    html_to_md(headline)
-                    for headline in issue_result.headlines
-                ))
-            )
-        )
-    if issue_result.rankings:
-        embed.add_field(
-            name=':chart_with_upwards_trend::',
-            inline=False,
-            value=(
-                '```diff\n{}\n```'
-                .format('\n'.join(census_difference(issue_result.rankings)))
-            )
-        )
-    for banner in issue_result.unlocks:
-            await client.send_message(issue_channel,
-                                      f'New banner unlocked: {banner}')
-    await client.send_message(
-        issue_channel,
-        'Legislation Passed:',
-        embed=embed
-    )
-
-
-async def open_issue(issue):
-    embed = discord.Embed(
-        title=issue.title,
-        description=html_to_md(issue.text),
-        colour=discord.Colour(0xfdc82f),
-        timestamp=datetime.utcnow()
-    )
-
-    if issue.banners:
-        embed.set_image(url=issue.banners[0])
-
-    embed.set_thumbnail(url=nation_flag)
-
-    for i, option in enumerate(issue.options):
-        embed.add_field(
-            name=number_to_emoji[i] + ':',
-            value=html_to_md(option.text)
-        )
-
-    message = await client.send_message(
-        issue_channel,
-        f'Issue #{issue.id}:',
-        embed=embed
-    )
-    for i in range(len(issue.options)):
-        await client.add_reaction(message, number_to_emoji[i])
-    await client.send_message(
-        inform_channel,
-        f'New issue: **{issue.title}**\n'
-        f'Head over to {issue_channel.mention} for more.'
-    )
-
 def vote_results(message, issue):
     for i, (reaction, option) in enumerate(zip(message.reactions,
                                                issue.options)):
@@ -174,87 +78,193 @@ def vote_results(message, issue):
         yield option, reaction.count
 
 
-async def get_last_issue_message(issue_channel):
-    async for message in client.logs_from(issue_channel, limit=50):
-        if (message.author == client.user and
-                message.content.startswith('Issue #')):
-            return message
+class DPNInstance:
+    def __init__(self, *, issue_channel, inform_channel,
+                 nation, issue_period, first_issue_offset):
+        self.issue_channel = issue_channel
+        self.inform_channel = inform_channel
+        self.nation = nation
+        self.issue_period = issue_period
+        self.first_issue_offset = first_issue_offset
+        self.client = discord.Client()
+        self.client.loop.create_task(self.issue_cycle_loop())
+
+    async def close_issue(self, issue, option):
+        issue_result = await option.accept()
+        logger.info(f'answer issue {issue.id} for {self.nation.id}')
+        embed = discord.Embed(
+            title=issue.title,
+            description=html_to_md(issue.text),
+            colour=discord.Colour(0xde3831),
+            timestamp=datetime.utcnow()
+        )
+
+        embed.add_field(
+            name=':white_check_mark::',
+            inline=False,
+            value=html_to_md(option.text)
+        )
+        if issue_result.desc:
+            embed.add_field(
+                name=':pencil::',
+                inline=False,
+                value=html_to_md(issue_result.desc.capitalize() + '.')
+            )
+        if issue_result.headlines:
+            embed.add_field(
+                name=':newspaper::',
+                inline=False,
+                value=(
+                    ';\n'
+                    .join((
+                        html_to_md(headline)
+                        for headline in issue_result.headlines
+                    ))
+                )
+            )
+        if issue_result.rankings:
+            embed.add_field(
+                name=':chart_with_upwards_trend::',
+                inline=False,
+                value=(
+                    '```diff\n{}\n```'
+                    .format('\n'.join(census_difference(issue_result.rankings)))
+                )
+            )
+        for banner in issue_result.unlocks:
+            await self.client.send_message(self.issue_channel,
+                                           f'New banner unlocked: {banner}')
+        await self.client.send_message(
+            self.issue_channel,
+            'Legislation Passed:',
+            embed=embed
+        )
+
+    async def open_issue(self, issue):
+        embed = discord.Embed(
+            title=issue.title,
+            description=html_to_md(issue.text),
+            colour=discord.Colour(0xfdc82f),
+            timestamp=datetime.utcnow()
+        )
+
+        if issue.banners:
+            embed.set_image(url=issue.banners[0])
+
+        embed.set_thumbnail(url=self.nation_flag)
+
+        for i, option in enumerate(issue.options):
+            embed.add_field(
+                name=number_to_emoji[i] + ':',
+                value=html_to_md(option.text)
+            )
+
+        message = await self.client.send_message(
+            self.issue_channel,
+            f'Issue #{issue.id}:',
+            embed=embed
+        )
+        for i in range(len(issue.options)):
+            await self.client.add_reaction(message, number_to_emoji[i])
+        await self.client.send_message(
+            self.inform_channel,
+            f'New issue: **{issue.title}**\n'
+            f'Head over to {self.issue_channel.mention} for more.'
+        )
+
+    async def get_last_issue_message(self):
+        async for message in self.client.logs_from(self.issue_channel,
+                                                   limit=50):
+            if (message.author == self.client.user and
+                    message.content.startswith('Issue #')):
+                return message
 
 
-def wait_until_first_issue():
-    now = datetime.utcnow()
-    today_seconds = (
-        now.timestamp()
-        - now.replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
-    )
-    to_sleep = config['ISSUE_PERIOD'] - today_seconds % config['ISSUE_PERIOD']
-    logger.info(f'sleeping {to_sleep} seconds before starting the'
-                f' issue cycle loop for {nation.id}')
-    return asyncio.sleep(to_sleep)
+    def wait_until_first_issue(self):
+        now = datetime.utcnow()
+        today_seconds = (
+            now.timestamp()
+            - (now
+               .replace(hour=0, minute=0, second=0, microsecond=0)
+               .timestamp())
+        )
+        to_sleep = self.issue_period - today_seconds % self.issue_period
+        logger.info(f'sleeping {to_sleep} seconds before starting the'
+                    f' issue cycle loop for {self.nation.id}')
+        return asyncio.sleep(to_sleep)
 
 
-async def issue_cycle():
-    global nation_flag
+    async def issue_cycle(self):
+        nation_name, self.nation_flag, issues = await (
+            self.nation.name() + self.nation.flag() + self.nation.issues())
+        if not self.client.user.name == nation_name:  # ratelimit :(
+            await self.client.edit_profile(username=nation_name)
 
-    nation_name, nation_flag, issues = await (
-        nation.name() + nation.flag() + nation.issues())
-    if not client.user.name == nation_name:  # ratelimit :(
-        await client.edit_profile(username=nation_name)
-
-    issues = list(reversed(issues))
-    
-    last_issue_message = await get_last_issue_message(issue_channel)
-    if (last_issue_message and
-            last_issue_message.content == f'Issue #{issues[0].id}:'):
-        results = list(vote_results(last_issue_message, issues[0]))
-        _, max_votes = max(results, key=itemgetter(1))
-        option = random.choice(
-            [option for option, votes in results if votes == max_votes])
-
-        await close_issue(issues[0], option)
-        logger.info(f'close issue {issues[0].id} for {nation.id}')
-        await open_issue(issues[1])
-        logger.info(f'open next issue {issues[1].id} for {nation.id}')
-    else:
-        await open_issue(issues[0])
-        logger.info(f'open first issue {issues[0].id} for {nation.id}')
-
-
-async def issue_cycle_loop():
-    await client.wait_until_ready()
-
-    global issue_channel, inform_channel, nation
-
-    issue_channel = client.get_channel(config['ISSUES_CHANNEL'])
-    inform_channel = client.get_channel(config['INFORM_CHANNEL'])
-
-    nation = NationControl(
-        config['NATION'],
-        autologin=config.get('AUTOLOGIN') or '',
-        password=config.get('PASSWORD') or ''
-    )
-
-    await client.change_presence(game=discord.Game(name='NationStates'))
-
-    await wait_until_first_issue()
-
-    while not client.is_closed:
-        logger.info(f'start cycle for {nation.id}')
-        started_at = time.time()
+        issues = list(reversed(issues))
         
-        try:
-            await issue_cycle()
-        except:
-            logger.error(f'for {nation.id}:\n' + traceback.format_exc())
-        
-        logger.info(f'end cycle for {nation.id}')
-        finished_at = time.time()
-        delta = finished_at - started_at
-        await asyncio.sleep(config['ISSUE_PERIOD'] - delta)
+        last_issue_message = await self.get_last_issue_message()
+        if (last_issue_message and
+                last_issue_message.content == f'Issue #{issues[0].id}:'):
+            results = list(vote_results(last_issue_message, issues[0]))
+            _, max_votes = max(results, key=itemgetter(1))
+            option = random.choice(
+                [option for option, votes in results if votes == max_votes])
+
+            await self.close_issue(issues[0], option)
+            logger.info(f'close issue {issues[0].id} for {self.nation.id}')
+            await self.open_issue(issues[1])
+            logger.info(f'open next issue {issues[1].id} for {self.nation.id}')
+        else:
+            await self.open_issue(issues[0])
+            logger.info(f'open first issue {issues[0].id} for {self.nation.id}')
 
 
-client.loop.create_task(issue_cycle_loop())
+    async def issue_cycle_loop(self):
+        await self.client.wait_until_ready()
+
+        # XXX make less ugly and terrible
+        self.issue_channel = self.client.get_channel(self.issue_channel)
+        self.inform_channel = self.client.get_channel(self.inform_channel)
+
+        await self.client.change_presence(
+            game=discord.Game(name='NationStates'))
+
+        await self.wait_until_first_issue()
+
+        while not self.client.is_closed:
+            logger.info(f'start cycle for {self.nation.id}')
+            started_at = time.time()
+
+            try:
+                await self.issue_cycle()
+            except:
+                logger.error(f'for {self.nation.id}:\n'
+                             + traceback.format_exc())
+
+            logger.info(f'end cycle for {self.nation.id}')
+            finished_at = time.time()
+            delta = finished_at - started_at
+            await asyncio.sleep(self.issue_period - delta)
 
 
 if __name__ == "__main__":
-    client.run(config['DISCORD_API_KEY'])
+    with open('config.json') as f:
+        config = json.load(f)
+
+    with suppress(KeyError):
+        logging.config.dictConfig(config['LOGGING'])
+
+    dpn = DPNInstance(
+        issue_channel=config['ISSUES_CHANNEL'],
+        inform_channel=config['INFORM_CHANNEL'],
+        nation=NationControl(
+            config['NATION'],
+            autologin=config.get('AUTOLOGIN') or '',
+            password=config.get('PASSWORD') or ''
+        ),
+        issue_period=config.get('ISSUE_PERIOD') or 21600,  # 6 hours
+        first_issue_offset=config.get('ISSUE_OFFSET') or 0
+    )
+    dpn.client.run(config['DISCORD_API_KEY'])
+
+
