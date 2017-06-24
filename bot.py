@@ -79,7 +79,7 @@ def vote_results(message, issue):
 
 
 class DPNInstance:
-    def __init__(self, *, issue_channel, inform_channel,
+    def __init__(self, *, api_key, issue_channel, inform_channel,
                  nation, issue_period, first_issue_offset):
         self.issue_channel = issue_channel
         self.inform_channel = inform_channel
@@ -87,7 +87,9 @@ class DPNInstance:
         self.issue_period = issue_period
         self.first_issue_offset = first_issue_offset
         self.client = discord.Client()
-        self.client.loop.create_task(self.issue_cycle_loop())
+        self.client.loop.create_task(self.client.start(api_key))
+        self.issue_cycle_loop_task = \
+            self.client.loop.create_task(self.issue_cycle_loop())
 
     async def close_issue(self, issue, option):
         issue_result = await option.accept()
@@ -197,7 +199,10 @@ class DPNInstance:
                .replace(hour=0, minute=0, second=0, microsecond=0)
                .timestamp())
         )
-        to_sleep = self.issue_period - today_seconds % self.issue_period
+        to_sleep = (
+            self.issue_period - today_seconds % self.issue_period
+            + self.first_issue_offset
+        )
         logger.info(f'sleeping {to_sleep} seconds before starting the'
                     f' issue cycle loop for {self.nation.id}')
         return asyncio.sleep(to_sleep)
@@ -264,17 +269,29 @@ if __name__ == "__main__":
     with suppress(KeyError):
         logging.config.dictConfig(config['LOGGING'])
 
-    dpn = DPNInstance(
-        issue_channel=config['ISSUES_CHANNEL'],
-        inform_channel=config['INFORM_CHANNEL'],
-        nation=NationControl(
-            config['NATION'],
-            autologin=config.get('AUTOLOGIN') or '',
-            password=config.get('PASSWORD') or ''
-        ),
-        issue_period=config.get('ISSUE_PERIOD') or 21600,  # 6 hours
-        first_issue_offset=config.get('ISSUE_OFFSET') or 0
-    )
-    dpn.client.run(config['DISCORD_API_KEY'])
+    instances = []
+    for instance in config['INSTANCES']:
+        instances.append(DPNInstance(
+            api_key=instance['API_KEY'],
+            issue_channel=instance['ISSUES_CHANNEL'],
+            inform_channel=instance['INFORM_CHANNEL'],
+            nation=NationControl(
+                instance['NATION'],
+                autologin=instance.get('AUTOLOGIN') or '',
+                password=instance.get('PASSWORD') or ''
+            ),
+            issue_period=instance.get('ISSUE_PERIOD') or 21600,  # 6 hours
+            first_issue_offset=instance.get('ISSUE_OFFSET') or 0
+        ))
+    loop = asyncio.get_event_loop()
+    try:
+        loop.run_forever()
+    except KeyboardInterrupt:
+        for instance in instances:
+            instance.issue_cycle_loop_task.cancel()
+            loop.run_until_complete(instance.client.logout())
+    finally:
+        loop.stop()
+        loop.close()
 
 
