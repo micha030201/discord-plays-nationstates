@@ -104,11 +104,11 @@ class DPNInstance:
             inline=False,
             value=html_to_md(option.text)
         )
-        if issue_result.desc:
+        if issue_result.happening:
             embed.add_field(
                 name=':pencil::',
                 inline=False,
-                value=html_to_md(issue_result.desc.capitalize() + '.')
+                value=html_to_md(issue_result.happening.capitalize() + '.')
             )
         if issue_result.headlines:
             embed.add_field(
@@ -122,23 +122,32 @@ class DPNInstance:
                     ))
                 )
             )
-        if issue_result.rankings:
+        if issue_result.census:
             embed.add_field(
                 name=':chart_with_upwards_trend::',
                 inline=False,
                 value=(
                     '```diff\n{}\n```'
-                    .format('\n'.join(census_difference(issue_result.rankings)))
+                    .format('\n'.join(census_difference(issue_result.census)))
                 )
             )
-        for banner in issue_result.unlocks:
-            await self.client.send_message(self.issue_channel,
-                                           f'New banner unlocked: {banner}')
         await self.client.send_message(
             self.issue_channel,
             'Legislation Passed:',
             embed=embed
         )
+        for banner in issue_result.banners:
+            embed = discord.Embed(
+                title=banner.name,
+                description=banner.validity,
+                colour=discord.Colour(0x36393e),
+            )
+            embed.set_image(url=banner.url)
+            await self.client.send_message(
+                self.issue_channel,
+                'New banner unlocked:',
+                embed=embed
+            )
 
     async def open_issue(self, issue):
         embed = discord.Embed(
@@ -149,7 +158,7 @@ class DPNInstance:
         )
 
         if issue.banners:
-            embed.set_image(url=issue.banners[0])
+            embed.set_image(url=issue.banners[0].url)
 
         embed.set_thumbnail(url=self.nation_flag)
 
@@ -203,6 +212,7 @@ class DPNInstance:
         issues = list(reversed(issues))
         
         last_issue_message = await self.get_last_issue_message()
+        # TODO pythonicize
         if (last_issue_message and
                 last_issue_message.content == f'Issue #{issues[0].id}:'):
             results = list(vote_results(last_issue_message, issues[0]))
