@@ -87,9 +87,19 @@ class DPNInstance:
         self.issue_period = issue_period
         self.first_issue_offset = first_issue_offset
         self.client = discord.Client()
+        self.client.event(self.on_message)
         self.client.loop.create_task(self.client.start(api_key))
         self.issue_cycle_loop_task = \
             self.client.loop.create_task(self.issue_cycle_loop())
+
+    async def on_message(self, message):
+        if not message.content == self.client.user.mention:
+            return
+        description = await self.nation.description()
+        message = await self.client.send_message(
+            message.channel,
+            f'https://nationstates.net/{self.nation.id}\n\n{description}'
+        )
 
     async def close_issue(self, issue, option):
         issue_result = await option.accept()
@@ -237,7 +247,7 @@ class DPNInstance:
     async def issue_cycle_loop(self):
         await self.client.wait_until_ready()
 
-        # XXX make less ugly and terrible
+        # TODO make less ugly and terrible
         self.issue_channel = self.client.get_channel(self.issue_channel)
         self.inform_channel = self.client.get_channel(self.inform_channel)
 
