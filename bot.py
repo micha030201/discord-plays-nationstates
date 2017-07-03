@@ -10,7 +10,7 @@ from operator import itemgetter
 from itertools import islice
 
 import discord
-from aionationstates import NationControl
+import aionationstates
 
 
 logger = logging.getLogger('discord-plays-nationstates')
@@ -88,9 +88,9 @@ class DPNInstance:
         self.first_issue_offset = first_issue_offset
         self.client = discord.Client()
         self.client.event(self.on_message)
-        self.client.loop.create_task(self.client.start(api_key))
+        asyncio.ensure_future(self.client.start(api_key))
         self.issue_cycle_loop_task = \
-            self.client.loop.create_task(self.issue_cycle_loop())
+            asyncio.ensure_future(self.issue_cycle_loop())
 
     async def on_message(self, message):
         if not message.content == self.client.user.mention:
@@ -275,9 +275,10 @@ class DPNInstance:
 if __name__ == "__main__":
     with open('config.json') as f:
         config = json.load(f)
-
     with suppress(KeyError):
         logging.config.dictConfig(config['LOGGING'])
+
+    aionationstates.USER_AGENT = config['USER-AGENT']
 
     instances = []
     for instance in config['INSTANCES']:
@@ -285,7 +286,7 @@ if __name__ == "__main__":
             api_key=instance['API_KEY'],
             issue_channel=instance['ISSUES_CHANNEL'],
             inform_channel=instance['INFORM_CHANNEL'],
-            nation=NationControl(
+            nation=aionationstates.NationControl(
                 instance['NATION'],
                 autologin=instance.get('AUTOLOGIN') or '',
                 password=instance.get('PASSWORD') or ''
@@ -293,15 +294,26 @@ if __name__ == "__main__":
             issue_period=instance.get('ISSUE_PERIOD') or 21600,  # 6 hours
             first_issue_offset=instance.get('ISSUE_OFFSET') or 0
         ))
+
     loop = asyncio.get_event_loop()
     try:
-        loop.run_forever()
-    except KeyboardInterrupt:
+        loop.run_until_complete(
+            # Await all Tasks, so that exceptions in them can propagate.
+            # Otherwise the program remains frozen until you manually
+            # kill it, when it prints the "Task exception was never
+            # retrieved" error message.
+            #
+            # This feels like a hack, but I'm not sure there's a better way.
+            asyncio.gather(*asyncio.Task.all_tasks()))
+    except:
         for instance in instances:
-            instance.issue_cycle_loop_task.cancel()
+            # Disable the "Task was destroyed but it is pending!"
+            # error message. We already know the error occured, no
+            # need to spam the log.
+            instance.issue_cycle_loop_task._log_destroy_pending = False
             loop.run_until_complete(instance.client.logout())
+        raise
     finally:
-        loop.stop()
         loop.close()
 
 
