@@ -117,21 +117,45 @@ class DPNInstance:
             value=html_to_md(option.text)
         )
         if issue_result.happening:
+
+            reclass_lines = []
+            r = issue_result.reclassifications
+            if r.govt:
+                reclass_lines.append(
+                    f'Reclassified from *{r.govt.before}* to *{r.govt.after}*')
+            if r.civilrights:
+                reclass_lines.append(
+                    f'Civil Rights changed from *{r.civilrights.before}*'
+                    f' to *{r.civilrights.after}*')
+            if r.economy:
+                reclass_lines.append(
+                    f'Economy changed from *{r.economy.before}*'
+                    f' to *{r.economy.after}*')
+            if r.politicalfreedom:
+                reclass_lines.append(
+                    f'Political Freedom changed from *{r.politicalfreedom.before}*'
+                    f' to *{r.politicalfreedom.after}*')
+            reclass_lines = ';\n'.join(reclass_lines)
+            reclassifications = \
+                f'\n\n**{reclass_lines}.**' if reclass_lines else ''
+
             embed.add_field(
                 name=':pencil::',
                 inline=False,
-                value=html_to_md(issue_result.happening.capitalize() + '.')
+                value=(
+                    html_to_md(issue_result.happening.capitalize() + '.')
+                    + reclassifications
+                )
             )
         if issue_result.headlines:
             embed.add_field(
                 name=':newspaper::',
                 inline=False,
                 value=(
-                    ';\n'
-                    .join((
+                    ';\n'.join((
                         html_to_md(headline)
-                        for headline in issue_result.headlines
-                    ))
+                        for headline in issue_result.headlines))
+                    + '.'
                 )
             )
         if issue_result.census:
