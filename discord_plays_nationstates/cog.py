@@ -107,37 +107,18 @@ class DiscordPlaysNationstates:
             inline=False,
             value=html_to_md(option.text)
         )
-        if issue_result.happening:
-
-            reclass_lines = []
-            r = issue_result.reclassifications
-            if r.govt:
-                reclass_lines.append(
-                    f'Reclassified from *{r.govt.before}* to *{r.govt.after}*')
-            if r.civilrights:
-                reclass_lines.append(
-                    f'Civil Rights changed from *{r.civilrights.before}*'
-                    f' to *{r.civilrights.after}*')
-            if r.economy:
-                reclass_lines.append(
-                    f'Economy changed from *{r.economy.before}*'
-                    f' to *{r.economy.after}*')
-            if r.politicalfreedom:
-                reclass_lines.append(
-                    f'Political Freedom changed from *{r.politicalfreedom.before}*'
-                    f' to *{r.politicalfreedom.after}*')
-            reclass_lines = ';\n'.join(reclass_lines)
-            reclassifications = \
-                f'\n\n**{reclass_lines}.**' if reclass_lines else ''
-
-            embed.add_field(
-                name=':pencil::',
-                inline=False,
-                value=(
-                    html_to_md(issue_result.happening.capitalize() + '.')
-                    + reclassifications
-                )
-            )
+        effect = issue_result.effect_line
+        # str.capitalize() lowercases the rest of the string.
+        effect = f'{effect[0].upper()}{effect[1:]}.'
+        if issue_result.reclassifications:
+            reclassifications = ";\n".join(issue_result.reclassifications)
+            effect += f'\n\n{reclassifications}.'
+        effect = html_to_md(effect)
+        embed.add_field(
+            name=':pencil::',
+            inline=False,
+            value=effect
+        )
         if issue_result.headlines:
             embed.add_field(
                 name=':newspaper::',
