@@ -1,9 +1,7 @@
-import time
 import random
 import asyncio
-import traceback
-import logging.config
-from datetime import datetime
+import logging
+from datetime import datetime, timedelta
 from operator import itemgetter
 from itertools import islice
 
@@ -79,14 +77,40 @@ def vote_results(message, issue):
 
 
 class DiscordPlaysNationstates:
-    def __init__(self, bot, nation, *, issue_channel,
-                 issue_period=21600, first_issue_offset=0):
-        self.nation = nation
-        self.issue_channel = issue_channel
-        self.issue_period = issue_period
+    """The cog.
+
+    Parameters
+    ----------
+    bot : :class:`commands.Bot`
+        Your bot instance.
+    nation : :class:`aionationstates.NationControl`
+        The nation you want to control.
+    channel : :class:`discord.Channel`
+        The channel you want the bot to use.
+    issues_per_day : int
+        How often to cycle the issues.
+    first_issue_offset : :class:`datetime.timedelta`
+        How soon after UTC midnight to post the first issue of the day.
+    """
+    def __init__(self, bot, nation, *, channel, issues_per_day=4,
+                 first_issue_offset=timedelta(0)):
+
+        if type(issues_per_day) is not int or not 1 <= issues_per_day <= 4:
+            raise ValueError('issues_per_day must be an'
+                             ' integer between 1 and 4')
+        self.between_issues = timedelta(days=1) / issues_per_day
+
+        if first_issue_offset >= self.between_issues:
+            raise ValueError('first_issue_offset must not exceed the'
+                             ' time between issues')
         self.first_issue_offset = first_issue_offset
-        self.issue_cycle_loop_task = \
-            asyncio.ensure_future(self.issue_cycle_loop())
+
+        self.bot = bot
+        self.nation = nation
+        self.channel = channel
+
+        task = asyncio.get_event_loop().create_task(self.issue_cycle_loop())
+        self.__unloader = task.cancel()
 
     @commands.command(hidden=True)
     @commands.is_owner()
@@ -99,14 +123,16 @@ class DiscordPlaysNationstates:
             title=issue.title,
             description=html_to_md(issue.text),
             colour=discord.Colour(0xde3831),
-            timestamp=datetime.utcnow()
         )
 
+        # Selected option:
         embed.add_field(
             name=':white_check_mark::',
             inline=False,
             value=html_to_md(option.text)
         )
+
+        # Effect line + reclassifications:
         effect = issue_result.effect_line
         # str.capitalize() lowercases the rest of the string.
         effect = f'{effect[0].upper()}{effect[1:]}.'
@@ -119,6 +145,8 @@ class DiscordPlaysNationstates:
             inline=False,
             value=effect
         )
+
+        # Headlines
         if issue_result.headlines:
             embed.add_field(
                 name=':newspaper::',
@@ -130,20 +158,22 @@ class DiscordPlaysNationstates:
                     + '.'
                 )
             )
+
+        # Census:
         if issue_result.census:
             embed.add_field(
                 name=':chart_with_upwards_trend::',
                 inline=False,
                 value=(
-                    '```diff\n{}\n```'
-                    .format('\n'.join(census_difference(issue_result.census)))
+                    '```diff\n'
+                    + '\n'.join(census_difference(issue_result.census))
+                    + '\n```'
                 )
             )
-        await self.client.send_message(
-            self.issue_channel,
-            'Legislation Passed:',
-            embed=embed
-        )
+
+        await self.channel.send('Legislation Passed:', embed=embed)
+
+        # Banners:
         for banner in issue_result.banners:
             embed = discord.Embed(
                 title=banner.name,
@@ -151,11 +181,7 @@ class DiscordPlaysNationstates:
                 colour=discord.Colour(0x36393e),
             )
             embed.set_image(url=banner.url)
-            await self.client.send_message(
-                self.issue_channel,
-                'New banner unlocked:',
-                embed=embed
-            )
+            await self.channel.send('New banner unlocked:', embed=embed)
 
     async def open_issue(self, issue):
         embed = discord.Embed(
@@ -176,13 +202,9 @@ class DiscordPlaysNationstates:
                 value=html_to_md(option.text)
             )
 
-        message = await self.client.send_message(
-            self.issue_channel,
-            f'Issue #{issue.id}:',
-            embed=embed
-        )
+        message = await self.channel.send(f'Issue #{issue.id}:', embed=embed)
         for i in range(len(issue.options)):
-            await self.client.add_reaction(message, number_to_emoji[i])
+            await message.add_reaction(number_to_emoji[i])
 
     async def vote_results(self, issue):
         def result(message, issue):
@@ -200,23 +222,19 @@ class DiscordPlaysNationstates:
 
         raise LookupError
 
-    def wait_until_first_issue(self):
-        now = datetime.utcnow()
-        today_seconds = (
-            now.timestamp()
-            - (now
-               .replace(hour=0, minute=0, second=0, microsecond=0)
-               .timestamp())
-        )
-        to_sleep = (
-            self.issue_period - today_seconds % self.issue_period
-            + self.first_issue_offset
-        )
-        return asyncio.sleep(to_sleep)
+    def wait_until_next_issue(self):
+        this_midnight = datetime.utcnow().replace(
+            hour=0, minute=0, second=0, microsecond=0)
+        since_first_issue_today = (datetime.utcnow()
+                                   - this_midnight
+                                   + self.first_issue_offset)
+        since_last_issue = since_first_issue_today % self.between_issues
+        until_next_issue = self.between_issue - since_last_issue
+        return asyncio.sleep(until_next_issue)
 
     async def issue_cycle(self):
-        nation_name, self.nation_flag, issues = await (
-            self.nation.name() + self.nation.flag() + self.nation.issues())
+        self.nation_flag, issues = await (
+            self.nation.flag() + self.nation.issues())
 
         issues.reverse()
 
@@ -235,17 +253,9 @@ class DiscordPlaysNationstates:
 
     async def issue_cycle_loop(self):
         await self.bot.wait_until_ready()
-
-        await self.wait_until_first_issue()
-
         while True:
-            started_at = time.time()
-
+            await self.wait_until_next_issue()
             try:
                 await self.issue_cycle()
             except Exception:
-                logger.exception('Error while changing issues:')
-
-            finished_at = time.time()
-            delta = finished_at - started_at
-            await asyncio.sleep(self.issue_period - delta)
+                logger.exception('Error while cycling issues:')
