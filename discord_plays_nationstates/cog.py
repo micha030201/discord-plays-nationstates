@@ -5,12 +5,15 @@ from datetime import datetime, timedelta
 from operator import itemgetter
 from itertools import islice
 
+import aionationstates
 import discord
 from discord import commands
 
 
 logger = logging.getLogger('discord-plays-nationstates')
 
+
+# Helper functions:
 
 def html_to_md(html):
     return (
@@ -76,46 +79,15 @@ def vote_results(message, issue):
         yield option, reaction.count
 
 
-class DiscordPlaysNationstates:
-    """The cog.
+# Bot class:
 
-    Parameters
-    ----------
-    bot : :class:`commands.Bot`
-        Your bot instance.
-    nation : :class:`aionationstates.NationControl`
-        The nation you want to control.
-    channel : :class:`discord.Channel`
-        The channel you want the bot to use.
-    issues_per_day : int
-        How often to cycle the issues.
-    first_issue_offset : :class:`datetime.timedelta`
-        How soon after UTC midnight to post the first issue of the day.
-    """
-    def __init__(self, bot, nation, *, channel, issues_per_day=4,
-                 first_issue_offset=timedelta(0)):
+class IssueAnswerer:
+    def __init__(self, **kwargs):
+        for name, value in kwargs.items():
+            setattr(self, name, value)
 
-        if type(issues_per_day) is not int or not 1 <= issues_per_day <= 4:
-            raise ValueError('issues_per_day must be an'
-                             ' integer between 1 and 4')
-        self.between_issues = timedelta(days=1) / issues_per_day
-
-        if first_issue_offset >= self.between_issues:
-            raise ValueError('first_issue_offset must not exceed the'
-                             ' time between issues')
-        self.first_issue_offset = first_issue_offset
-
-        self.bot = bot
-        self.nation = nation
-        self.channel = channel
-
-        task = asyncio.get_event_loop().create_task(self.issue_cycle_loop())
-        self.__unloader = task.cancel()
-
-    @commands.command(hidden=True)
-    @commands.is_owner()
-    async def scroll(self, ctx):
-        await self.issue_cycle()
+        self.task = asyncio.get_event_loop().create_task(
+            self.issue_cycle_loop())
 
     async def close_issue(self, issue, option):
         issue_result = await option.accept()
@@ -276,10 +248,90 @@ class DiscordPlaysNationstates:
             await self.open_issue(issues[1])
 
     async def issue_cycle_loop(self):
-        await self.bot.wait_until_ready()
         while True:
             await self.wait_until_next_issue()
             try:
                 await self.issue_cycle()
             except Exception:
                 logger.exception('Error while cycling issues:')
+
+
+# Commands:
+
+@commands.command()
+async def issues(ctx, nation: aionationstates.Nation = None):
+    """What's this?"""
+    nations_to_jobs = {job.nation: job
+                       for job in _jobs
+                       if job.channel in ctx.guild.channels}
+
+    try:
+        jobs = (nations_to_jobs[nation],)
+    except KeyError:
+        jobs = nations_to_jobs.values()
+
+    messages = await asyncio.gather(*[job.info() for job in jobs])
+    await asyncio.gather(*map(ctx.send, messages))
+
+
+@commands.command(hidden=True)
+@commands.is_owner()
+async def scroll(ctx, nation: aionationstates.Nation = None):
+    """Switch the issues manually."""
+    nations_to_jobs = {job.nation: job for job in _jobs}
+
+    if nation is None and len(nations_to_jobs) == 1:
+        await nations_to_jobs.popitem()[1].issue_cycle()
+    else:
+        await nations_to_jobs[nation].issue_cycle()
+
+
+# Loading & unloading:
+
+_jobs = []
+
+
+# called by discord.py on bot.load_extension()
+def setup(bot):
+    bot.add_command(issues)
+    bot.add_command(scroll)
+
+
+# called by discord.py on bot.unload_extension()
+def teardown():
+    for job in _jobs:
+        job.task.cancel()
+
+
+# Public interface:
+
+def instantiate(nation, channel, *, issues_per_day=4,
+                first_issue_offset=timedelta(0)):
+    """Create a new issue-answering job.
+
+    Parameters
+    ----------
+    nation : :class:`aionationstates.NationControl`
+        The nation you want to post issues of.
+    channel : :class:`discord.Channel`
+        The channel you want the bot to post issues in.
+    issues_per_day : int
+        How many issues to post per day.
+    first_issue_offset : :class:`datetime.timedelta`
+        How soon after UTC midnight to post the first issue of the day.
+    """
+    if type(issues_per_day) is not int or not 1 <= issues_per_day <= 4:
+        raise ValueError('issues_per_day must be an'
+                         ' integer between 1 and 4')
+    between_issues = timedelta(days=1) / issues_per_day
+
+    if first_issue_offset >= between_issues:
+        raise ValueError('first_issue_offset must not exceed the'
+                         ' time between issues')
+
+    _jobs.append(IssueAnswerer(
+        between_issues=between_issues,
+        first_issue_offset=first_issue_offset,
+        nation=nation,
+        channel=channel,
+    ))
