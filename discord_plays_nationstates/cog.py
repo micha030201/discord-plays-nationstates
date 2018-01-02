@@ -174,7 +174,7 @@ class DiscordPlaysNationstates:
         await self.channel.send('Legislation Passed:', embed=embed)
 
         # Banners:
-        for banner in issue_result.banners:
+        async def post_banner(banner):
             embed = discord.Embed(
                 title=banner.name,
                 description=banner.validity,
@@ -182,6 +182,30 @@ class DiscordPlaysNationstates:
             )
             embed.set_image(url=banner.url)
             await self.channel.send('New banner unlocked:', embed=embed)
+
+        # Policies:
+        def policy_embed(policy):
+            embed = discord.Embed(
+                title=policy.name,
+                description=policy.description,
+                colour=discord.Colour(0x36393e),
+            )
+            embed.set_image(url=policy.banner)
+            return embed
+
+        async def post_new_policy(policy):
+            await self.channel.send('New policy introduced:',
+                                    embed=policy_embed(policy))
+
+        async def post_removed_policy(policy):
+            await self.channel.send('Removed policy:',
+                                    embed=policy_embed(policy))
+
+        await asyncio.gather(
+            *map(post_banner, issue_result.banners),
+            *map(post_new_policy, issue_result.new_policies),
+            *map(post_removed_policy, issue_result.removed_policies)
+        )
 
     async def open_issue(self, issue):
         embed = discord.Embed(
