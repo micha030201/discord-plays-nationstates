@@ -7,7 +7,7 @@ from itertools import islice
 
 import aionationstates
 import discord
-from discord import commands
+from discord.ext import commands
 
 
 logger = logging.getLogger('discord-plays-nationstates')
@@ -209,9 +209,8 @@ class IssueAnswerer:
                 assert reaction.emoji == number_to_emoji[i]
                 yield option, reaction.count
 
-        async for message in self.client.logs_from(self.issue_channel,
-                                                   limit=50):
-            if (message.author == self.client.user and
+        async for message in self.channel.history(limit=50):
+            if (message.author == self.channel.guild.me and
                     message.content.startswith('Issue #')):
                 assert message.content == f'Issue #{issue.id}:'
                 return list(result(message, issue))
@@ -225,8 +224,8 @@ class IssueAnswerer:
                                    - this_midnight
                                    + self.first_issue_offset)
         since_last_issue = since_first_issue_today % self.between_issues
-        until_next_issue = self.between_issue - since_last_issue
-        return asyncio.sleep(until_next_issue)
+        until_next_issue = self.between_issues - since_last_issue
+        return asyncio.sleep(until_next_issue.total_seconds())
 
     async def issue_cycle(self):
         self.nation_flag, issues = await (
