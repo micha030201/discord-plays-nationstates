@@ -8,7 +8,8 @@ Installation
 
 .. code-block::
 
-   python -m pip install discord-plays-nationstates
+   pip install discord-plays-nationstates
+   pip install -U git+https://github.com/Rapptz/discord.py@rewrite#egg=discord.py
    discord-plays-nationstates \
       --token YOUR_DISCORD_API_TOKEN \
       --useragent YOUR_NATIONSTATES_USERAGENT \
@@ -16,7 +17,8 @@ Installation
       --password PASSWORD_TO_YOUR_NATION \
       --channel ID_OF_THE_DISCORD_CHANNEL_YOU_WANT_TO_USE
 
-``--help`` output:
+Usage
+-----
 
 .. code-block::
 
@@ -40,7 +42,7 @@ Dependencies
 ------------
 
 * `Python 3.6.1+ <https://python.org>`_ - Programming language
-* `discord.py <https://github.com/Rapptz/discord.py>`_ - Wrapper for the Discord API
+* `discord.py rewrite <https://github.com/Rapptz/discord.py>`_ - Wrapper for the Discord API
 * `aionationstates <https://github.com/micha030201/aionationstates>`_ - Wrapper for the NationStates API
 
 License
