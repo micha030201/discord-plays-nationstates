@@ -89,6 +89,9 @@ class IssueAnswerer:
         self.task = asyncio.get_event_loop().create_task(
             self.issue_cycle_loop())
 
+    async def info(self):
+        return await self.nation.description()
+
     async def close_issue(self, issue, option):
         issue_result = await option.accept()
         embed = discord.Embed(
