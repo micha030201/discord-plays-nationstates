@@ -44,7 +44,7 @@ setup(
         'Intended Audience :: End Users/Desktop',
         'Topic :: Internet',
         'Topic :: Games/Entertainment :: Simulation',
-        'Natural Language :: English'
+        'Natural Language :: English',
 
         'License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)',
 
