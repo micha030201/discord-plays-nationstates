@@ -72,13 +72,6 @@ def census_difference(census_change):
         yield f'{highlight}{title:<35} {arrow}{percentage:.2f}%'
 
 
-def vote_results(message, issue):
-    for i, (reaction, option) in enumerate(zip(message.reactions,
-                                               issue.options)):
-        assert reaction.emoji == number_to_emoji[i]
-        yield option, reaction.count
-
-
 # Bot class:
 
 class IssueAnswerer:
