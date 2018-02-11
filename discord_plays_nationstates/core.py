@@ -208,8 +208,14 @@ class IssueAnswerer:
         async for message in self.channel.history(limit=50):
             if (message.author == self.channel.guild.me and
                     message.content.startswith('Issue #')):
-                assert message.content == f'Issue #{issue.id}:'
-                return list(result(message, issue))
+                if message.content == f'Issue #{issue.id}:':
+                    return list(result(message, issue))
+                else:
+                    logger.error(
+                        "Previous issue in channel doesn't match oldest "
+                        "issue of nation, discarding."
+                    )
+                    break
 
         raise LookupError
 
