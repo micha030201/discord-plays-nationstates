@@ -7,9 +7,6 @@ from setuptools import setup
 here = path.abspath(path.dirname(__file__))
 
 
-assert sys.version_info >= (3, 6, 1)
-
-
 with open(path.join(here, 'discord_plays_nationstates/__init__.py')) as f:
     version_match = re.search("__version__ = '(.+?)'", f.read())
     if version_match:
@@ -57,6 +54,7 @@ setup(
     packages=['discord_plays_nationstates'],
 
     install_requires=['aionationstates', 'discord.py'],
+    python_requires=">=3.6.1",
 
     entry_points={
         'console_scripts': ['discord-plays-nationstates=discord_plays_nationstates.run:main'],
