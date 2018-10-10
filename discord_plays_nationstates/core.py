@@ -200,10 +200,12 @@ class IssueAnswerer:
 
     async def vote_results(self, issue):
         def result(message, issue):
-            for i, (reaction, option) in enumerate(zip(message.reactions,
-                                                       issue.options)):
-                assert reaction.emoji == number_to_emoji[i]
-                yield option, reaction.count
+            reactions = {
+                reaction.emoji: reaction.count
+                for reaction in message.reactions}
+            for option in issue.options:
+                option_emoji = number_to_emoji[option]
+                yield option, reactions[option_emoji]
 
         async for message in self.channel.history(limit=50):
             if (message.author == self.channel.guild.me and
