@@ -28,6 +28,7 @@ Usage
 
    optional arguments:
      -h, --help            show this help message and exit
+     --offset              hours past midnight to post first issue of the day
 
    required arguments:
      --token TOKEN         The token for your Discord bot

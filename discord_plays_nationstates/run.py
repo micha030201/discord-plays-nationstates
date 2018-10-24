@@ -5,8 +5,8 @@ import logging.config
 from discord.ext import commands
 import aionationstates
 
-from .utils import call_once
-import discord_plays_nationstates
+import utils
+import core
 
 
 def main():
@@ -17,28 +17,34 @@ def main():
         '--token',
         help='The token for your Discord bot',
         required=True
-    )
+        )
     required.add_argument(
         '--useragent',
         help='User-Agent header for the NationStates API',
         required=True
-    )
+        )
     required.add_argument(
         '--nation',
         help='Name of the nation you want to answer issues of',
         required=True
-    )
+        )
     required.add_argument(
         '--password',
         help='Password to the nation',
         required=True
-    )
+        )
     required.add_argument(
         '--channel',
         help='ID of the Discord channel to use',
         type=int,
         required=True
-    )
+        )
+
+    optional = parser.add_argument_group('optional arguments')
+    optional.add_argument(
+        '--offset', type=float, required=False,
+        help='Hours after midnight to post first issue of the day.')
+
     args = parser.parse_args()
 
 
@@ -50,33 +56,33 @@ def main():
         "formatters": {
             "standard": {
                 "format": "%(asctime)s [%(levelname)s] %(filename)s: %(message)s"
-            }
-        },
+                }
+            },
         "handlers": {
             "to_console": {
                 "level": "DEBUG",
                 "formatter": "standard",
                 "class": "logging.StreamHandler"
-            }
-        },
+                }
+            },
         "loggers": {
             "discord": {
                 "handlers": ["to_console"],
                 "level": "INFO",
                 "propagate": False
-            },
+                },
             "aionationstates": {
                 "handlers": ["to_console"],
                 "level": "DEBUG",
                 "propagate": False
-            },
+                },
             "discord-plays-nationstates": {
                 "handlers": ["to_console"],
                 "level": "DEBUG",
                 "propagate": False
+                }
             }
-        }
-    })
+        })
 
     logger = logging.getLogger('discord-plays-nationstates')
 
@@ -84,16 +90,16 @@ def main():
 
     bot = commands.Bot(command_prefix='.')
 
-    bot.load_extension('discord_plays_nationstates')
+    bot.load_extension('core')
 
 
     @bot.event
-    @call_once
+    @utils.call_once
     async def on_ready():
         channel = bot.get_channel(args.channel)
         nation = aionationstates.NationControl(args.nation, password=args.password)
         assert channel is not None
-        discord_plays_nationstates.instantiate(nation, channel)
+        core.instantiate(nation, channel, first_issue_offset=args.offset or 0)
 
 
     @bot.event
@@ -102,11 +108,10 @@ def main():
             return
 
         if isinstance(error, commands.CommandInvokeError):
-            error = error.original
-            logger.error(
+            error_str = (
                 f'In {ctx.command.qualified_name}:\n'
-                + ''.join(traceback.format_tb(error.__traceback__))
-                + '{0.__class__.__name__}: {0}'.format(error)
-            )
+                + ''.join(traceback.format_tb(error.original.__traceback__))
+                + '{0.__class__.__name__}: {0}'.format(error.original))
+            logger.error(error_str)
 
     bot.run(args.token)

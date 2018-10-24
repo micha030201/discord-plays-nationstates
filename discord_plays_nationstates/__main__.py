@@ -1,4 +1,4 @@
-from discord_plays_nationstates import run
+import run
 
 
 run.main()

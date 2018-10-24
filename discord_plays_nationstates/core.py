@@ -1,9 +1,10 @@
 import random
 import asyncio
 import logging
-from datetime import datetime, timedelta
-from operator import itemgetter
-from itertools import islice
+
+import datetime
+import operator
+import itertools
 
 import aionationstates
 import discord
@@ -24,42 +25,30 @@ def html_to_md(html):
         .replace('<i>', '*')
         .replace('</i>', '*')
         .replace('&quot;', '"')
-    )
+        )
 
 
 number_to_emoji = {
-    0: '1⃣',
-    1: '2⃣',
-    2: '3⃣',
-    3: '4⃣',
-    4: '5⃣',
-    5: '6⃣',
-    6: '7⃣',
-    7: '8⃣',
-    8: '9⃣',
-    9: '🔟'
-}
+    -1: '0⃣', 0: '1⃣', 1: '2⃣', 2: '3⃣',
+    3: '4⃣', 4: '5⃣', 5: '6⃣', 6: '7⃣',
+    7: '8⃣', 8: '9⃣', 9: '🔟'}
 emoji_to_number = dict(reversed(i) for i in number_to_emoji.items())
 
 
 def census_difference(census_change):
+    results = (
+        (scale.info.title, scale.pchange)
+        for scale in census_change)
     mapping = (
         sorted(
-            islice(
+            itertools.islice(
                 sorted(
-                    (
-                        (scale.info.title, scale.pchange)
-                        for scale in census_change
-                    ),
+                    results,
                     key=lambda x: abs(x[1]),
-                    reverse=True
-                ),
-                11
-            ),
-            key=itemgetter(1),
-            reverse=True
-        )
-    )
+                    reverse=True),
+                11),
+            key=operator.itemgetter(1),
+            reverse=True))
     for title, percentage in mapping:
         highlight = arrow = ' '
         if percentage > 0:
@@ -87,18 +76,10 @@ class IssueAnswerer:
 
     async def close_issue(self, issue, option):
         issue_result = await option.accept()
-        embed = discord.Embed(
-            title=issue.title,
-            description=html_to_md(issue.text),
-            colour=discord.Colour(0xde3831),
-        )
+        embed = discord.Embed(title=issue.title, description=html_to_md(issue.text), colour=discord.Colour(0xde3831))
 
         # Selected option:
-        embed.add_field(
-            name=':white_check_mark::',
-            inline=False,
-            value=html_to_md(option.text)
-        )
+        embed.add_field(name=':white_check_mark::', inline=False, value=html_to_md(option.text))
 
         # Effect line + reclassifications:
         effect = issue_result.effect_line
@@ -107,37 +88,17 @@ class IssueAnswerer:
         if issue_result.reclassifications:
             reclassifications = ";\n".join(issue_result.reclassifications)
             effect += f'\n\n{reclassifications}.'
-        effect = html_to_md(effect)
-        embed.add_field(
-            name=':pencil::',
-            inline=False,
-            value=effect
-        )
+        embed.add_field(name=':pencil::', inline=False, value=html_to_md(effect))
 
         # Headlines
         if issue_result.headlines:
-            embed.add_field(
-                name=':newspaper::',
-                inline=False,
-                value=(
-                    ';\n'.join((
-                        html_to_md(headline)
-                        for headline in issue_result.headlines))
-                    + '.'
-                )
-            )
+            text = ';\n'.join(html_to_md(headline) for headline in issue_result.headlines) + '.'
+            embed.add_field(name=':newspaper::', inline=False,value=text)
 
         # Census:
         if issue_result.census:
-            embed.add_field(
-                name=':chart_with_upwards_trend::',
-                inline=False,
-                value=(
-                    '```diff\n'
-                    + '\n'.join(census_difference(issue_result.census))
-                    + '\n```'
-                )
-            )
+            text = '```diff\n' + '\n'.join(census_difference(issue_result.census)) + '\n```'
+            embed.add_field(name=':chart_with_upwards_trend::', inline=False, value=text)
 
         await self.channel.send('Legislation Passed:', embed=embed)
 
@@ -146,8 +107,7 @@ class IssueAnswerer:
             embed = discord.Embed(
                 title=banner.name,
                 description=banner.validity,
-                colour=discord.Colour(0x36393e),
-            )
+                colour=discord.Colour(0x36393e))
             embed.set_image(url=banner.url)
             await self.channel.send('New banner unlocked:', embed=embed)
 
@@ -156,77 +116,69 @@ class IssueAnswerer:
             embed = discord.Embed(
                 title=policy.name,
                 description=policy.description,
-                colour=discord.Colour(0x36393e),
-            )
+                colour=discord.Colour(0x36393e))
             embed.set_image(url=policy.banner)
             return embed
 
         async def post_new_policy(policy):
-            await self.channel.send('New policy introduced:',
-                                    embed=policy_embed(policy))
+            await self.channel.send('New policy introduced:', embed=policy_embed(policy))
 
         async def post_removed_policy(policy):
-            await self.channel.send('Removed policy:',
-                                    embed=policy_embed(policy))
+            await self.channel.send('Removed policy:', embed=policy_embed(policy))
 
         await asyncio.gather(
             *map(post_banner, issue_result.banners),
             *map(post_new_policy, issue_result.new_policies),
-            *map(post_removed_policy, issue_result.removed_policies)
-        )
+            *map(post_removed_policy, issue_result.removed_policies))
 
     async def open_issue(self, issue):
         embed = discord.Embed(
             title=issue.title,
             description=html_to_md(issue.text),
             colour=discord.Colour(0xfdc82f),
-            timestamp=datetime.utcnow()
-        )
+            timestamp=datetime.datetime.utcnow())
 
         if issue.banners:
             embed.set_image(url=issue.banners[0])
 
         embed.set_thumbnail(url=self.nation_flag)
 
-        for i, option in enumerate(issue.options):
-            embed.add_field(
-                name=number_to_emoji[i] + ':',
-                value=html_to_md(option.text)
-            )
+        for i, option in enumerate([Dismiss(issue)] + issue.options, -1):
+            embed.add_field(name=number_to_emoji[i] + ':', value=html_to_md(option.text))
 
         message = await self.channel.send(f'Issue #{issue.id}:', embed=embed)
-        for i in range(len(issue.options)):
+        for i in range(-1, len(issue.options)):
             await message.add_reaction(number_to_emoji[i])
 
     async def vote_results(self, issue):
         def result(message, issue):
-            reactions = {
+            reaction_counts = {
                 reaction.emoji: reaction.count
                 for reaction in message.reactions}
-            for option in issue.options:
-                option_emoji = number_to_emoji[option]
-                yield option, reactions[option_emoji]
+            for index, option in enumerate([Dismiss(issue)] + issue.options, -1):
+                option_emoji = number_to_emoji[index]
+                yield option, reaction_counts[option_emoji]
 
         async for message in self.channel.history(limit=50):
-            if (message.author == self.channel.guild.me and
-                    message.content.startswith('Issue #')):
-                if message.content == f'Issue #{issue.id}:':
-                    return list(result(message, issue))
-                else:
-                    logger.error(
-                        "Previous issue in channel doesn't match oldest "
-                        "issue of nation, discarding."
-                    )
-                    break
+            if message.author != self.channel.guild.me:
+                continue
+            if not message.content.startswith('Issue #'):
+                continue
+            if message.content == f'Issue #{issue.id}:':
+                results = list(result(message, issue))
+                return results
+            logger.error(
+                "Previous issue in channel doesn't match oldest "
+                "issue of nation, discarding.")
+            break
 
         raise LookupError
 
     def wait_until_next_issue(self):
-        this_midnight = datetime.utcnow().replace(
+        this_midnight = datetime.datetime.utcnow().replace(
             hour=0, minute=0, second=0, microsecond=0)
-        since_first_issue_today = (datetime.utcnow()
-                                   - this_midnight
-                                   + self.first_issue_offset)
+        since_first_issue_today = (
+            datetime.datetime.utcnow() - this_midnight + self.first_issue_offset)
         since_last_issue = since_first_issue_today % self.between_issues
         until_next_issue = self.between_issues - since_last_issue
         return asyncio.sleep(until_next_issue.total_seconds())
@@ -240,11 +192,11 @@ class IssueAnswerer:
         try:
             results = await self.vote_results(issues[0])
         except LookupError:
+            logger.exception('vote results error')
             await self.open_issue(issues[0])
         else:
-            _, max_votes = max(results, key=itemgetter(1))
-            winning_options = [option for option, votes in results
-                               if votes == max_votes]
+            _, max_votes = max(results, key=operator.itemgetter(1))
+            winning_options = [option for option, votes in results if votes == max_votes]
             winning_option = random.choice(winning_options)
 
             await self.close_issue(issues[0], winning_option)
@@ -259,14 +211,37 @@ class IssueAnswerer:
                 logger.exception('Error while cycling issues:')
 
 
+class Dismiss:
+    """ To dismiss an issue.
+        Attributes
+        ----------
+        text : str
+            The option text.  May contain HTML elements and character references.
+        """
+
+    def __init__(self, issue):
+        self._issue = issue
+        self._id = -1
+        self.text = aionationstates.utils.unscramble_encoding('Dismiss issue.')
+
+    def accept(self):
+        """ Accept the option.
+            Returns
+            -------
+            an awaitable of :class:`IssueResult`
+            """
+        return self._issue._nation._accept_issue(self._issue.id, self._id)
+
+    def __repr__(self):
+        return f'<Option {self._id} of issue #{self._issue.id}>'
+
+
 # Commands:
 
 @commands.command()
 async def issues(ctx, nation: aionationstates.Nation = None):
     """What's this?"""
-    nations_to_jobs = {job.nation: job
-                       for job in _jobs
-                       if job.channel in ctx.guild.channels}
+    nations_to_jobs = {job.nation: job for job in _jobs if job.channel in ctx.guild.channels}
 
     try:
         jobs = (nations_to_jobs[nation],)
@@ -308,33 +283,29 @@ def teardown():
 
 # Public interface:
 
-def instantiate(nation, channel, *, issues_per_day=4,
-                first_issue_offset=timedelta(0)):
+def instantiate(nation, channel, *, issues_per_day=4, first_issue_offset=0):
     """Create a new issue-answering job.
 
-    Parameters
-    ----------
-    nation : :class:`aionationstates.NationControl`
-        The nation you want to post issues of.
-    channel : :class:`discord.Channel`
-        The channel you want the bot to post issues in.
-    issues_per_day : int
-        How many issues to post per day.
-    first_issue_offset : :class:`datetime.timedelta`
-        How soon after UTC midnight to post the first issue of the day.
-    """
-    if type(issues_per_day) is not int or not 1 <= issues_per_day <= 4:
-        raise ValueError('issues_per_day must be an'
-                         ' integer between 1 and 4')
-    between_issues = timedelta(days=1) / issues_per_day
+        Parameters
+        ----------
+        nation : :class:`aionationstates.NationControl`
+            The nation you want to post issues of.
+        channel : :class:`discord.Channel`
+            The channel you want the bot to post issues in.
+        issues_per_day : int
+            How many issues to post per day.
+        first_issue_offset : int
+            How soon after UTC midnight to post the first issue of the day.
+        """
+    assert isinstance(issues_per_day, int) and 1 <= issues_per_day <= 4, (
+        'issues_per_day must be an integer between 1 and 4')
+    between_issues = 4 / issues_per_day
 
-    if first_issue_offset >= between_issues:
-        raise ValueError('first_issue_offset must not exceed the'
-                         ' time between issues')
+    assert first_issue_offset >= 0, (
+        'first_issue_offset must be an integer greater than or equal to zero')
+    assert first_issue_offset < 24 / issues_per_day, (
+        'first_issue_offset must not exceed the time between issues')
 
     _jobs.append(IssueAnswerer(
-        between_issues=between_issues,
-        first_issue_offset=first_issue_offset,
-        nation=nation,
-        channel=channel,
-    ))
+        first_issue_offset=datetime.timedelta(hours=first_issue_offset),
+        between_issues=between_issues, nation=nation, channel=channel))

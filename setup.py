@@ -27,10 +27,7 @@ setup(
     description='A discord bot that answers issues as a NationStates nation',
     long_description=long_description,
 
-    url='https://github.com/micha030201/discord-plays-nationstates',
-
-    author='Михаил Лебедев',
-    author_email='micha030201@gmail.com',
+    url='https://github.com/Tru7h/discord-plays-nationstates',
 
     license='AGPLv3+',
 
@@ -47,16 +44,16 @@ setup(
 
         'Programming Language :: Python :: 3.6',
         'Framework :: AsyncIO',
-    ],
+        ],
 
     keywords='nationstates chatbot',
 
     packages=['discord_plays_nationstates'],
 
     install_requires=['aionationstates', 'discord.py'],
-    python_requires=">=3.6.1",
+    python_requires="==3.6.1",
 
     entry_points={
         'console_scripts': ['discord-plays-nationstates=discord_plays_nationstates.run:main'],
-    }
-)
+        }
+    )
