@@ -42,7 +42,17 @@ def main():
 
     optional = parser.add_argument_group('optional arguments')
     optional.add_argument(
-        '--offset', type=float, required=False,
+        '--issues',
+        type=int,
+        required=False,
+        default=4,
+        choices=range(1, 5),
+        help='Number of issues to request per day.')
+    optional.add_argument(
+        '--offset',
+        type=float,
+        required=False,
+        default=0,
         help='Hours after midnight to post first issue of the day.')
 
     args = parser.parse_args()
@@ -99,7 +109,7 @@ def main():
         channel = bot.get_channel(args.channel)
         nation = aionationstates.NationControl(args.nation, password=args.password)
         assert channel is not None
-        core.instantiate(nation, channel, first_issue_offset=args.offset or 0)
+        core.instantiate(nation, channel, issues_per_day=args.issues, first_issue_offset=args.offset)
 
 
     @bot.event

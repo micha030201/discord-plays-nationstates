@@ -29,9 +29,7 @@ def html_to_md(html):
 
 
 number_to_emoji = {
-    -1: '0⃣', 0: '1⃣', 1: '2⃣', 2: '3⃣',
-    3: '4⃣', 4: '5⃣', 5: '6⃣', 6: '7⃣',
-    7: '8⃣', 8: '9⃣', 9: '🔟'}
+    -1: '0⃣', 0: '1⃣', 1: '2⃣', 2: '3⃣', 3: '4⃣', 4: '5⃣', 5: '6⃣', 6: '7⃣', 7: '8⃣', 8: '9⃣', 9: '🔟'}
 emoji_to_number = dict(reversed(i) for i in number_to_emoji.items())
 
 
@@ -39,16 +37,9 @@ def census_difference(census_change):
     results = (
         (scale.info.title, scale.pchange)
         for scale in census_change)
-    mapping = (
-        sorted(
-            itertools.islice(
-                sorted(
-                    results,
-                    key=lambda x: abs(x[1]),
-                    reverse=True),
-                11),
-            key=operator.itemgetter(1),
-            reverse=True))
+    results_sorted = sorted(results, key=lambda x: abs(x[1]), reverse=True)
+    sliced = itertools.islice(results_sorted, 11)
+    mapping = sorted(sliced, key=operator.itemgetter(1), reverse=True)
     for title, percentage in mapping:
         highlight = arrow = ' '
         if percentage > 0:
@@ -63,13 +54,15 @@ def census_difference(census_change):
 
 # Bot class:
 
-class IssueAnswerer:
-    def __init__(self, **kwargs):
-        for name, value in kwargs.items():
-            setattr(self, name, value)
+class IssueAnswerer(object):
+    def __init__(self, first_issue_offset, between_issues, nation, channel):
+        self.first_issue_offset = first_issue_offset
+        self.between_issues = between_issues
+        self.nation = nation
+        self.channel = channel
 
-        self.task = asyncio.get_event_loop().create_task(
-            self.issue_cycle_loop())
+        my_task = self.issue_cycle_loop()
+        self.task = asyncio.get_event_loop().create_task(my_task)
 
     async def info(self):
         return await self.nation.description()
@@ -82,9 +75,10 @@ class IssueAnswerer:
         embed.add_field(name=':white_check_mark::', inline=False, value=html_to_md(option.text))
 
         # Effect line + reclassifications:
-        effect = issue_result.effect_line
-        # str.capitalize() lowercases the rest of the string.
-        effect = f'{effect[0].upper()}{effect[1:]}.'
+        if issue_result.effect_line is not None:
+            effect = f'{effect[0].upper()}{effect[1:]}.'
+        else:
+            effect = f'Issue was dismissed.'
         if issue_result.reclassifications:
             reclassifications = ";\n".join(issue_result.reclassifications)
             effect += f'\n\n{reclassifications}.'
@@ -131,7 +125,7 @@ class IssueAnswerer:
             *map(post_new_policy, issue_result.new_policies),
             *map(post_removed_policy, issue_result.removed_policies))
 
-    async def open_issue(self, issue):
+    async def open_issue(self, issue: aionationstates.Issue):
         embed = discord.Embed(
             title=issue.title,
             description=html_to_md(issue.text),
@@ -155,7 +149,7 @@ class IssueAnswerer:
             reaction_counts = {
                 reaction.emoji: reaction.count
                 for reaction in message.reactions}
-            for index, option in enumerate([Dismiss(issue)] + issue.options, -1):
+            for index, option in enumerate([Dismiss(issue)] + issue.options, start=-1):
                 option_emoji = number_to_emoji[index]
                 yield option, reaction_counts[option_emoji]
 
@@ -175,13 +169,12 @@ class IssueAnswerer:
         raise LookupError
 
     def wait_until_next_issue(self):
-        this_midnight = datetime.datetime.utcnow().replace(
-            hour=0, minute=0, second=0, microsecond=0)
-        since_first_issue_today = (
-            datetime.datetime.utcnow() - this_midnight + self.first_issue_offset)
+        utc_now = datetime.datetime.utcnow()
+        last_midnight = utc_now.replace(hour=0, minute=0, second=0, microsecond=0)
+        since_first_issue_today = utc_now - (last_midnight + self.first_issue_offset)
         since_last_issue = since_first_issue_today % self.between_issues
         until_next_issue = self.between_issues - since_last_issue
-        return asyncio.sleep(until_next_issue.total_seconds())
+        return until_next_issue.total_seconds()
 
     async def issue_cycle(self):
         self.nation_flag, issues = await (
@@ -203,37 +196,23 @@ class IssueAnswerer:
             await self.open_issue(issues[1])
 
     async def issue_cycle_loop(self):
+        logger_str = 'Issue cycle will sleep %d minutes and %d seconds until next issue'
         while True:
-            await self.wait_until_next_issue()
+            until_next_issue = self.wait_until_next_issue()
+            logger.info(logger_str, until_next_issue // 60, until_next_issue % 60)
+            await asyncio.sleep(until_next_issue)
             try:
                 await self.issue_cycle()
             except Exception:
                 logger.exception('Error while cycling issues:')
 
 
-class Dismiss:
-    """ To dismiss an issue.
-        Attributes
-        ----------
-        text : str
-            The option text.  May contain HTML elements and character references.
-        """
+class Dismiss(aionationstates.IssueOption):
 
     def __init__(self, issue):
         self._issue = issue
         self._id = -1
         self.text = aionationstates.utils.unscramble_encoding('Dismiss issue.')
-
-    def accept(self):
-        """ Accept the option.
-            Returns
-            -------
-            an awaitable of :class:`IssueResult`
-            """
-        return self._issue._nation._accept_issue(self._issue.id, self._id)
-
-    def __repr__(self):
-        return f'<Option {self._id} of issue #{self._issue.id}>'
 
 
 # Commands:
@@ -243,9 +222,9 @@ async def issues(ctx, nation: aionationstates.Nation = None):
     """What's this?"""
     nations_to_jobs = {job.nation: job for job in _jobs if job.channel in ctx.guild.channels}
 
-    try:
+    if nation in nations_to_jobs:
         jobs = (nations_to_jobs[nation],)
-    except KeyError:
+    else:
         jobs = nations_to_jobs.values()
 
     messages = await asyncio.gather(*[job.info() for job in jobs])
@@ -264,6 +243,14 @@ async def scroll(ctx, nation: aionationstates.Nation = None):
         await nations_to_jobs[nation].issue_cycle()
 
 
+@commands.command(hidden=True)
+@commands.is_owner()
+async def shutdown(ctx: commands.Context, nation: aionationstates.Nation = None):
+    teardown()
+    bot: commands.Bot = ctx.bot
+    await bot.close()
+
+
 # Loading & unloading:
 
 _jobs = []
@@ -273,6 +260,7 @@ _jobs = []
 def setup(bot):
     bot.add_command(issues)
     bot.add_command(scroll)
+    bot.add_command(shutdown)
 
 
 # called by discord.py on bot.unload_extension()
@@ -297,15 +285,18 @@ def instantiate(nation, channel, *, issues_per_day=4, first_issue_offset=0):
         first_issue_offset : int
             How soon after UTC midnight to post the first issue of the day.
         """
-    assert isinstance(issues_per_day, int) and 1 <= issues_per_day <= 4, (
-        'issues_per_day must be an integer between 1 and 4')
-    between_issues = 4 / issues_per_day
+    assert issues_per_day in range(1, 5), 'issues_per_day must be 1, 2, 3, or 4'
+    between_issues = datetime.timedelta(hours=24 / issues_per_day)
 
     assert first_issue_offset >= 0, (
         'first_issue_offset must be an integer greater than or equal to zero')
-    assert first_issue_offset < 24 / issues_per_day, (
+    assert first_issue_offset * issues_per_day <= 24, (
         'first_issue_offset must not exceed the time between issues')
+    fio_td = datetime.timedelta(hours=first_issue_offset)
+    issue_answerer = IssueAnswerer(
+        first_issue_offset=fio_td,
+        between_issues=between_issues,
+        nation=nation,
+        channel=channel)
 
-    _jobs.append(IssueAnswerer(
-        first_issue_offset=datetime.timedelta(hours=first_issue_offset),
-        between_issues=between_issues, nation=nation, channel=channel))
+    _jobs.append(issue_answerer)

@@ -1,10 +1,10 @@
-from functools import wraps
+import functools
 
 
 def call_once(func):
     called_already = False
 
-    @wraps(func)
+    @functools.wraps(func)
     async def wrapper(*args, **kwargs):
         nonlocal called_already
         if not called_already:
