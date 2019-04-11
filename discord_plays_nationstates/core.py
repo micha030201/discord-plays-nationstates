@@ -76,7 +76,8 @@ class IssueAnswerer(object):
 
         # Effect line + reclassifications:
         if issue_result.effect_line is not None:
-            effect = f'{effect[0].upper()}{effect[1:]}.'
+            first, *additional = issue_result.effect_line
+            effect = f'{first.upper()}{additional}.'
         else:
             effect = f'Issue was dismissed.'
         if issue_result.reclassifications:
