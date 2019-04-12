@@ -67,19 +67,16 @@ class IssueAnswerer(object):
     async def info(self):
         return await self.nation.description()
 
-    async def close_issue(self, issue, option):
-        issue_result = await option.accept()
+    async def close_issue(self, issue: aionationstates.Issue, option: aionationstates.IssueOption):
+        issue_result: aionationstates.IssueResult = await option.accept()
         embed = discord.Embed(title=issue.title, description=html_to_md(issue.text), colour=discord.Colour(0xde3831))
 
         # Selected option:
         embed.add_field(name=':white_check_mark::', inline=False, value=html_to_md(option.text))
 
         # Effect line + reclassifications:
-        if issue_result.effect_line is not None:
-            first, *additional = issue_result.effect_line
-            effect = f'{first.upper()}{additional}.'
-        else:
-            effect = f'Issue was dismissed.'
+        effect_line = issue_result.effect_line or 'issue was dismissed'
+        effect = f'{effect_line.capitalize()}.'
         if issue_result.reclassifications:
             reclassifications = ";\n".join(issue_result.reclassifications)
             effect += f'\n\n{reclassifications}.'
