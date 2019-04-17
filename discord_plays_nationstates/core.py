@@ -245,7 +245,7 @@ class IssueAnswerer(object):
             await self.close_issue(winning_option)
             if not remaining_issues:
                 return
-            self.current_issue, *extra = remaining_issues
+            *extra, self.current_issue = remaining_issues
         except LookupError:
             logger.error('Vote results error.')
         except Exception:
