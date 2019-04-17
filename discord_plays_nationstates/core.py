@@ -28,9 +28,7 @@ def html_to_md(html):
         )
 
 
-number_to_emoji = {
-    -1: '0⃣', 0: '1⃣', 1: '2⃣', 2: '3⃣', 3: '4⃣', 4: '5⃣', 5: '6⃣', 6: '7⃣', 7: '8⃣', 8: '9⃣', 9: '🔟'}
-emoji_to_number = dict(reversed(i) for i in number_to_emoji.items())
+EMOJIS = ('0⃣', '1⃣', '2⃣', '3⃣', '4⃣', '5⃣', '6⃣', '7⃣', '8⃣', '9⃣', '🔟')
 
 
 def census_difference(census_change):
@@ -55,11 +53,14 @@ def census_difference(census_change):
 # Bot class:
 
 class IssueAnswerer(object):
-    def __init__(self, first_issue_offset, between_issues, nation, channel):
+    def __init__(self, first_issue_offset, between_issues, nation, channel, owner_id):
         self.first_issue_offset = first_issue_offset
         self.between_issues = between_issues
-        self.nation = nation
+        self.owner_id = owner_id
         self.channel = channel
+
+        self.nation = nation
+        self.current_issue = None
 
         my_task = self.issue_cycle_loop()
         self.task = asyncio.get_event_loop().create_task(my_task)
@@ -67,9 +68,24 @@ class IssueAnswerer(object):
     async def info(self):
         return await self.nation.description()
 
-    async def close_issue(self, issue: aionationstates.Issue, option: aionationstates.IssueOption):
+    async def countdown(self):
+        if self.current_issue is None:
+            new_issues = await self.nation.issues()
+            if new_issues:
+                *remaining_issues, self.current_issue = new_issues
+        if self.current_issue is not None:
+            winning_option: aionationstates.IssueOption = await self.vote_results()
+            logger.debug('Countdown vote yielded winning option text:\n%s', winning_option.text)
+        wait_until_next_issue = self.wait_until_next_issue()
+        return countdown_str(wait_until_next_issue)
+
+    async def close_issue(self, option: aionationstates.IssueOption):
         issue_result: aionationstates.IssueResult = await option.accept()
-        embed = discord.Embed(title=issue.title, description=html_to_md(issue.text), colour=discord.Colour(0xde3831))
+        issue = self.current_issue
+        embed = discord.Embed(
+            title=issue.title,
+            description=html_to_md(issue.text),
+            colour=discord.Colour(0xde3831))
 
         # Selected option:
         embed.add_field(name=':white_check_mark::', inline=False, value=html_to_md(option.text))
@@ -123,7 +139,11 @@ class IssueAnswerer(object):
             *map(post_new_policy, issue_result.new_policies),
             *map(post_removed_policy, issue_result.removed_policies))
 
-    async def open_issue(self, issue: aionationstates.Issue):
+        self.current_issue = None
+
+    async def open_issue(self):
+        issue = self.current_issue
+
         embed = discord.Embed(
             title=issue.title,
             description=html_to_md(issue.text),
@@ -131,40 +151,78 @@ class IssueAnswerer(object):
             timestamp=datetime.datetime.utcnow())
 
         if issue.banners:
-            embed.set_image(url=issue.banners[0])
+            banner_url, *extra = issue.banners
+            embed.set_image(url=banner_url)
 
-        embed.set_thumbnail(url=self.nation_flag)
+        nation_flag = await self.nation.flag()
+        embed.set_thumbnail(url=nation_flag)
 
-        for i, option in enumerate([Dismiss(issue)] + issue.options, -1):
-            embed.add_field(name=number_to_emoji[i] + ':', value=html_to_md(option.text))
+        reactions = []
+        for option, emoji in zip([Dismiss(issue)] + issue.options, EMOJIS):
+            embed.add_field(name=emoji + ':', value=html_to_md(option.text))
+            reactions.append(emoji)
 
         message = await self.channel.send(f'Issue #{issue.id}:', embed=embed)
-        for i in range(-1, len(issue.options)):
-            await message.add_reaction(number_to_emoji[i])
+        for emoji in reactions:
+            await message.add_reaction(emoji)
 
-    async def vote_results(self, issue):
+        self.current_issue = issue
+
+    async def vote_results(self):
+        issue = self.current_issue
+
         def result(message, issue):
-            reaction_counts = {
-                reaction.emoji: reaction.count
-                for reaction in message.reactions}
-            for index, option in enumerate([Dismiss(issue)] + issue.options, start=-1):
-                option_emoji = number_to_emoji[index]
-                yield option, reaction_counts[option_emoji]
+            vote_max = 0
+            reaction: discord.Reaction
+            debug_str = 'Found reaction (%s) with (%d) votes.'
+            for reaction in message.reactions:
+                if reaction.emoji not in EMOJIS:
+                    continue
+                logger.debug(debug_str, reaction.emoji, reaction.count)
+                if reaction.count < vote_max:
+                    continue
+                index = EMOJIS.index(reaction.emoji)
+                option = (index, reaction)
+                if reaction.count == vote_max:
+                    results.append(option)
+                    continue
+                results = [option]
+                vote_max = reaction.count
+            return results
 
+        message: discord.Message
+        options = [Dismiss(issue)] + issue.options
         async for message in self.channel.history(limit=50):
             if message.author != self.channel.guild.me:
                 continue
             if not message.content.startswith('Issue #'):
                 continue
             if message.content == f'Issue #{issue.id}:':
-                results = list(result(message, issue))
-                return results
+                results = result(message, issue)
+                top_pick, *tied = results
+                if not tied:
+                    index, reaction = top_pick
+                    return options[index]
+                logger.info('Vote is tied, looking for tie breaker: %s', self.owner_id)
+                owner_picks = []
+                reaction: discord.Reaction
+                for index, reaction in results:
+                    voters = await reaction.users().flatten()
+                    voter_set = set(voter.id for voter in voters)
+                    if self.owner_id in voter_set:
+                        owner_picks.append(options[index])
+                if owner_picks:
+                    if len(owner_picks) == 1:
+                        logger.info('App owner breaks tie.')
+                    return random.choice(owner_picks)
+                tied_options = [options[index] for index, users in results]
+                return random.choice(tied_options)
             logger.error(
                 "Previous issue in channel doesn't match oldest "
                 "issue of nation, discarding.")
             break
 
-        raise LookupError
+        raise LookupError()
 
     def wait_until_next_issue(self):
         utc_now = datetime.datetime.utcnow()
@@ -175,34 +233,38 @@ class IssueAnswerer(object):
         return until_next_issue.total_seconds()
 
     async def issue_cycle(self):
-        self.nation_flag, issues = await (
-            self.nation.flag() + self.nation.issues())
-
-        issues.reverse()
+        if self.current_issue is None:
+            new_issues = await self.nation.issues()
+            if not new_issues:
+                logger.info('Nation found no issues. Resuming cycle sleep.')
+                return
+            *remaining_issues, self.current_issue = new_issues
 
         try:
-            results = await self.vote_results(issues[0])
+            winning_option = await self.vote_results()
+            await self.close_issue(winning_option)
+            if not remaining_issues:
+                return
+            self.current_issue, *extra = remaining_issues
         except LookupError:
-            logger.exception('vote results error')
-            await self.open_issue(issues[0])
-        else:
-            _, max_votes = max(results, key=operator.itemgetter(1))
-            winning_options = [option for option, votes in results if votes == max_votes]
-            winning_option = random.choice(winning_options)
-
-            await self.close_issue(issues[0], winning_option)
-            await self.open_issue(issues[1])
+            logger.error('Vote results error.')
+        except Exception:
+            logger.exception('Error while cycling issues:')
+        await self.open_issue()
 
     async def issue_cycle_loop(self):
-        logger_str = 'Issue cycle will sleep %d minutes and %d seconds until next issue'
         while True:
-            until_next_issue = self.wait_until_next_issue()
-            logger.info(logger_str, until_next_issue // 60, until_next_issue % 60)
-            await asyncio.sleep(until_next_issue)
-            try:
-                await self.issue_cycle()
-            except Exception:
-                logger.exception('Error while cycling issues:')
+            wait_until_next_issue = self.wait_until_next_issue()
+            logger.info(countdown_str(wait_until_next_issue))
+            await asyncio.sleep(wait_until_next_issue)
+            await self.issue_cycle()
+
+
+def countdown_str(until_next_issue):
+    hours = int(until_next_issue // 3600)
+    minutes = int(until_next_issue % 3600 // 60)
+    seconds = int(until_next_issue % 60)
+    return f'Issue cycle will sleep {hours} hours, {minutes} minutes, and {seconds} seconds until next issue.'
 
 
 class Dismiss(aionationstates.IssueOption):
@@ -226,6 +288,20 @@ async def issues(ctx, nation: aionationstates.Nation = None):
         jobs = nations_to_jobs.values()
 
     messages = await asyncio.gather(*[job.info() for job in jobs])
+    await asyncio.gather(*map(ctx.send, messages))
+
+
+@commands.command()
+async def countdown(ctx, nation: aionationstates.Nation = None):
+    """Report time to next auto cycle."""
+    nations_to_jobs = {job.nation: job for job in _jobs if job.channel in ctx.guild.channels}
+
+    if nation in nations_to_jobs:
+        jobs = (nations_to_jobs[nation],)
+    else:
+        jobs = nations_to_jobs.values()
+
+    messages = await asyncio.gather(*[job.countdown() for job in jobs])
     await asyncio.gather(*map(ctx.send, messages))
 
 
@@ -257,6 +333,7 @@ _jobs = []
 # called by discord.py on bot.load_extension()
 def setup(bot):
     bot.add_command(issues)
+    bot.add_command(countdown)
     bot.add_command(scroll)
     bot.add_command(shutdown)
 
@@ -269,7 +346,7 @@ def teardown():
 
 # Public interface:
 
-def instantiate(nation, channel, *, issues_per_day=4, first_issue_offset=0):
+def instantiate(nation, channel, owner_id, *, issues_per_day=4, first_issue_offset=0):
     """Create a new issue-answering job.
 
         Parameters
@@ -294,6 +371,7 @@ def instantiate(nation, channel, *, issues_per_day=4, first_issue_offset=0):
     issue_answerer = IssueAnswerer(
         first_issue_offset=fio_td,
         between_issues=between_issues,
+        owner_id=owner_id,
         nation=nation,
         channel=channel)
 

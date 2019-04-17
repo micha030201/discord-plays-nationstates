@@ -109,7 +109,8 @@ def main():
         channel = bot.get_channel(args.channel)
         nation = aionationstates.NationControl(args.nation, password=args.password)
         assert channel is not None
-        core.instantiate(nation, channel, issues_per_day=args.issues, first_issue_offset=args.offset)
+        app = await bot.application_info()
+        core.instantiate(nation, channel, app.owner.id, issues_per_day=args.issues, first_issue_offset=args.offset)
 
 
     @bot.event
