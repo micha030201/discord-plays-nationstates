@@ -236,17 +236,18 @@ class IssueAnswerer(object):
             if not new_issues:
                 self.channel.send('Nation has no issues. Resuming cycle sleep.')
                 return
-            *remaining_issues, current_issue = new_issues
+            *remaining_issues, next_issue = new_issues
+            self.current_issue = next_issue
 
         try:
             winning_option = await self.vote_results()
             await self.close_issue(winning_option)
             if not remaining_issues:
                 return
-            *extra, current_issue = remaining_issues
+            *extra, next_issue = remaining_issues
         except LookupError:
             logger.error('Vote results error.')
-        await self.open_issue(current_issue)
+        await self.open_issue(next_issue)
 
     async def issue_cycle_loop(self):
         while True:
@@ -257,7 +258,7 @@ class IssueAnswerer(object):
                 await self.issue_cycle()
             except Exception:
                 logger.exception('Error while cycling issues:')
-                self.channel.send('Issue cycle error. Resuming cycle sleep.')
+                await self.channel.send('Issue cycle error. Resuming cycle sleep.')
                 self.current_issue = None
 
 
