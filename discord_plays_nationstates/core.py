@@ -141,9 +141,7 @@ class IssueAnswerer(object):
 
         self.current_issue = None
 
-    async def open_issue(self):
-        issue = self.current_issue
-
+    async def open_issue(self, issue: aionationstates.Issue):
         embed = discord.Embed(
             title=issue.title,
             description=html_to_md(issue.text),
@@ -236,28 +234,31 @@ class IssueAnswerer(object):
         if self.current_issue is None:
             new_issues = await self.nation.issues()
             if not new_issues:
-                logger.info('Nation found no issues. Resuming cycle sleep.')
+                self.channel.send('Nation has no issues. Resuming cycle sleep.')
                 return
-            *remaining_issues, self.current_issue = new_issues
+            *remaining_issues, current_issue = new_issues
 
         try:
             winning_option = await self.vote_results()
             await self.close_issue(winning_option)
             if not remaining_issues:
                 return
-            *extra, self.current_issue = remaining_issues
+            *extra, current_issue = remaining_issues
         except LookupError:
             logger.error('Vote results error.')
-        except Exception:
-            logger.exception('Error while cycling issues:')
-        await self.open_issue()
+        await self.open_issue(current_issue)
 
     async def issue_cycle_loop(self):
         while True:
             wait_until_next_issue = self.wait_until_next_issue()
             logger.info(countdown_str(wait_until_next_issue))
             await asyncio.sleep(wait_until_next_issue)
-            await self.issue_cycle()
+            try:
+                await self.issue_cycle()
+            except Exception:
+                logger.exception('Error while cycling issues:')
+                self.channel.send('Issue cycle error. Resuming cycle sleep.')
+                self.current_issue = None
 
 
 def countdown_str(until_next_issue):
