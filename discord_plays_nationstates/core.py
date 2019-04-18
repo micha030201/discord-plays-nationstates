@@ -58,9 +58,7 @@ class IssueAnswerer(object):
         self.between_issues = between_issues
         self.owner_id = owner_id
         self.channel = channel
-
         self.nation = nation
-        self.current_issue = None
 
         my_task = self.issue_cycle_loop()
         self.task = asyncio.get_event_loop().create_task(my_task)
@@ -69,19 +67,19 @@ class IssueAnswerer(object):
         return await self.nation.description()
 
     async def countdown(self):
-        if self.current_issue is None:
-            new_issues = await self.nation.issues()
-            if new_issues:
-                *remaining_issues, self.current_issue = new_issues
-        if self.current_issue is not None:
-            winning_option: aionationstates.IssueOption = await self.vote_results()
-            logger.debug('Countdown vote yielded winning option text:\n%s', winning_option.text)
+        issues = await self.nation.issues()
+        if issues:
+            *remaining_issues, current_issue = issues
+            try:
+                winning_option: aionationstates.IssueOption = await self.vote_results(current_issue)
+                logger.debug('Countdown vote yielded winning option text:\n%s', winning_option.text)
+            except LookupError:
+                logger.debug('LookupError')
         wait_until_next_issue = self.wait_until_next_issue()
         return countdown_str(wait_until_next_issue)
 
-    async def close_issue(self, option: aionationstates.IssueOption):
+    async def close_issue(self, issue: aionationstates.Issue, option: aionationstates.IssueOption):
         issue_result: aionationstates.IssueResult = await option.accept()
-        issue = self.current_issue
         embed = discord.Embed(
             title=issue.title,
             description=html_to_md(issue.text),
@@ -139,8 +137,6 @@ class IssueAnswerer(object):
             *map(post_new_policy, issue_result.new_policies),
             *map(post_removed_policy, issue_result.removed_policies))
 
-        self.current_issue = None
-
     async def open_issue(self, issue: aionationstates.Issue):
         embed = discord.Embed(
             title=issue.title,
@@ -164,11 +160,7 @@ class IssueAnswerer(object):
         for emoji in reactions:
             await message.add_reaction(emoji)
 
-        self.current_issue = issue
-
-    async def vote_results(self):
-        issue = self.current_issue
-
+    async def vote_results(self, issue: aionationstates.Issue):
         def result(message, issue):
             vote_max = 0
             reaction: discord.Reaction
@@ -231,23 +223,21 @@ class IssueAnswerer(object):
         return until_next_issue.total_seconds()
 
     async def issue_cycle(self):
-        if self.current_issue is None:
-            new_issues = await self.nation.issues()
-            if not new_issues:
-                self.channel.send('Nation has no issues. Resuming cycle sleep.')
-                return
-            *remaining_issues, next_issue = new_issues
-            self.current_issue = next_issue
+        issues = await self.nation.issues()
+        if not issues:
+            self.channel.send('Nation has no issues. Resuming cycle sleep.')
+            return
+        *remaining_issues, current_issue = issues
 
         try:
-            winning_option = await self.vote_results()
-            await self.close_issue(winning_option)
+            winning_option = await self.vote_results(current_issue)
+            await self.close_issue(current_issue, winning_option)
             if not remaining_issues:
                 return
-            *extra, next_issue = remaining_issues
+            *extra, current_issue = remaining_issues
         except LookupError:
             logger.error('Vote results error.')
-        await self.open_issue(next_issue)
+        await self.open_issue(current_issue)
 
     async def issue_cycle_loop(self):
         while True:
@@ -259,7 +249,6 @@ class IssueAnswerer(object):
             except Exception:
                 logger.exception('Error while cycling issues:')
                 await self.channel.send('Issue cycle error. Resuming cycle sleep.')
-                self.current_issue = None
 
 
 def countdown_str(until_next_issue):
