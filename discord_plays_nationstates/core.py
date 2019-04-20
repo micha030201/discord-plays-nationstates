@@ -67,14 +67,6 @@ class IssueAnswerer(object):
         return await self.nation.description()
 
     async def countdown(self):
-        issues = await self.nation.issues()
-        if issues:
-            *remaining_issues, current_issue = issues
-            try:
-                winning_option: aionationstates.IssueOption = await self._vote_results(current_issue)
-                logger.debug('Countdown vote yielded winning option text:\n%s', winning_option.text)
-            except LookupError:
-                logger.debug('LookupError')
         wait_until_next_issue = self.wait_until_next_issue()
         return countdown_str(wait_until_next_issue)
 
