@@ -60,7 +60,7 @@ class IssueAnswerer(object):
         self.channel = channel
         self.nation = nation
 
-        my_task = self.issue_cycle_loop()
+        my_task = self._issue_cycle_loop()
         self.task = asyncio.get_event_loop().create_task(my_task)
 
     async def info(self):
@@ -71,14 +71,14 @@ class IssueAnswerer(object):
         if issues:
             *remaining_issues, current_issue = issues
             try:
-                winning_option: aionationstates.IssueOption = await self.vote_results(current_issue)
+                winning_option: aionationstates.IssueOption = await self._vote_results(current_issue)
                 logger.debug('Countdown vote yielded winning option text:\n%s', winning_option.text)
             except LookupError:
                 logger.debug('LookupError')
         wait_until_next_issue = self.wait_until_next_issue()
         return countdown_str(wait_until_next_issue)
 
-    async def close_issue(self, issue: aionationstates.Issue, option: aionationstates.IssueOption):
+    async def _close_issue(self, issue: aionationstates.Issue, option: aionationstates.IssueOption):
         issue_result: aionationstates.IssueResult = await option.accept()
         embed = discord.Embed(
             title=issue.title,
@@ -137,7 +137,7 @@ class IssueAnswerer(object):
             *map(post_new_policy, issue_result.new_policies),
             *map(post_removed_policy, issue_result.removed_policies))
 
-    async def open_issue(self, issue: aionationstates.Issue):
+    async def _open_issue(self, issue: aionationstates.Issue):
         embed = discord.Embed(
             title=issue.title,
             description=html_to_md(issue.text),
@@ -160,7 +160,18 @@ class IssueAnswerer(object):
         for emoji in reactions:
             await message.add_reaction(emoji)
 
-    async def vote_results(self, issue: aionationstates.Issue):
+    async def _get_issue_post(self, issue: aionationstates.Issue):
+        message: discord.Message
+        async for message in self.channel.history(limit=50):
+            if message.author != self.channel.guild.me:
+                continue
+            if not message.content.startswith('Issue #'):
+                continue
+            if message.content == f'Issue #{issue.id}:':
+                return message
+        return None
+
+    async def _vote_results(self, issue: aionationstates.Issue):
         def result(message, issue):
             vote_max = 0
             reaction: discord.Reaction
@@ -180,39 +191,29 @@ class IssueAnswerer(object):
                 vote_max = reaction.count
             return results
 
-        message: discord.Message
+        message = await self._get_issue_post(issue)
+        if message is None:
+            raise LookupError(f'Issue #{issue.id} not found in recent channel history.')
         options = [Dismiss(issue)] + issue.options
-        async for message in self.channel.history(limit=50):
-            if message.author != self.channel.guild.me:
-                continue
-            if not message.content.startswith('Issue #'):
-                continue
-            if message.content == f'Issue #{issue.id}:':
-                results = result(message, issue)
-                top_pick, *tied = results
-                if not tied:
-                    index, reaction = top_pick
-                    return options[index]
-                logger.info('Vote is tied, looking for tie breaker: %s', self.owner_id)
-                owner_picks = []
-                reaction: discord.Reaction
-                for index, reaction in results:
-                    voters = await reaction.users().flatten()
-                    voter_set = set(voter.id for voter in voters)
-                    if self.owner_id in voter_set:
-                        owner_picks.append(options[index])
-                if owner_picks:
-                    if len(owner_picks) == 1:
-                        logger.info('App owner breaks tie.')
-                    return random.choice(owner_picks)
-                tied_options = [options[index] for index, users in results]
-                return random.choice(tied_options)
-            logger.error(
-                "Previous issue in channel doesn't match oldest "
-                "issue of nation, discarding.")
-            break
-
-        raise LookupError()
+        results = result(message, issue)
+        top_pick, *tied = results
+        if not tied:
+            index, reaction = top_pick
+            return options[index]
+        logger.info('Vote is tied, looking for tie breaker: %s', self.owner_id)
+        owner_picks = []
+        reaction: discord.Reaction
+        for index, reaction in results:
+            voters = await reaction.users().flatten()
+            voter_set = set(voter.id for voter in voters)
+            if self.owner_id in voter_set:
+                owner_picks.append(options[index])
+        if owner_picks:
+            if len(owner_picks) == 1:
+                logger.info('App owner breaks tie.')
+            return random.choice(owner_picks)
+        tied_options = [options[index] for index, users in results]
+        return random.choice(tied_options)
 
     def wait_until_next_issue(self):
         utc_now = datetime.datetime.utcnow()
@@ -227,19 +228,28 @@ class IssueAnswerer(object):
         if not issues:
             self.channel.send('Nation has no issues. Resuming cycle sleep.')
             return
-        *remaining_issues, current_issue = issues
 
-        try:
-            winning_option = await self.vote_results(current_issue)
-            await self.close_issue(current_issue, winning_option)
-            if not remaining_issues:
-                return
-            *extra, current_issue = remaining_issues
-        except LookupError:
-            logger.error('Vote results error.')
-        await self.open_issue(current_issue)
+        while len(issues) > 4:
+            try:
+                *issues, current_issue = issues
+                winning_option = await self._vote_results(current_issue)
+                await self._close_issue(current_issue, winning_option)
+            except LookupError as exc:
+                logger.error('Vote results error.')
+                self.channel.send(*exc.args)
+                await self._open_issue(current_issue)
+                issues = [current_issue] + issues
+                await asyncio.sleep(30)
 
-    async def issue_cycle_loop(self):
+        issues.reverse()
+        issue: aionationstates.Issue
+        for issue in issues:
+            message = await self._get_issue_post(issue)
+            if message is not None:
+                continue
+            await self._open_issue(issue)
+
+    async def _issue_cycle_loop(self):
         while True:
             wait_until_next_issue = self.wait_until_next_issue()
             logger.info(countdown_str(wait_until_next_issue))
@@ -337,7 +347,7 @@ def teardown():
 
 # Public interface:
 
-def instantiate(nation, channel, owner_id, *, issues_per_day=4, first_issue_offset=0):
+def instantiate(nation, channel, owner_id, *, first_issue_offset=0):
     """Create a new issue-answering job.
 
         Parameters
@@ -346,12 +356,12 @@ def instantiate(nation, channel, owner_id, *, issues_per_day=4, first_issue_offs
             The nation you want to post issues of.
         channel : :class:`discord.Channel`
             The channel you want the bot to post issues in.
-        issues_per_day : int
-            How many issues to post per day.
+        owner_id : int
+            discord app owner identification integer
         first_issue_offset : int
             How soon after UTC midnight to post the first issue of the day.
         """
-    assert issues_per_day in range(1, 5), 'issues_per_day must be 1, 2, 3, or 4'
+    issues_per_day = 5
     between_issues = datetime.timedelta(hours=24 / issues_per_day)
 
     assert first_issue_offset >= 0, (
