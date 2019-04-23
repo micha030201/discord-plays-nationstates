@@ -164,28 +164,26 @@ class IssueAnswerer(object):
         return None
 
     async def _vote_results(self, issue: aionationstates.Issue):
-        def result(message, issue):
-            vote_max = 0
-            reaction: discord.Reaction
-            debug_str = 'Found reaction (%s) with (%d) votes.'
-            for reaction in message.reactions:
-                if reaction.emoji not in EMOJIS:
-                    continue
-                logger.debug(debug_str, reaction.emoji, reaction.count)
-                if reaction.count < vote_max:
-                    continue
-                index = EMOJIS.index(reaction.emoji)
-                option = (index, reaction)
-                if reaction.count == vote_max:
-                    results.append(option)
-                    continue
-                results = [option]
-                vote_max = reaction.count
-            return results
 
         message = await self._get_issue_post(issue)
         if message is None:
             raise LookupError(f'Issue #{issue.id} not found in recent channel history.')
+        vote_max = 0
+        reaction: discord.Reaction
+        debug_str = 'Found reaction (%s) with (%d) votes.'
+        for reaction in message.reactions:
+            if reaction.emoji not in EMOJIS:
+                continue
+            logger.debug(debug_str, reaction.emoji, reaction.count)
+            if reaction.count < vote_max:
+                continue
+            index = EMOJIS.index(reaction.emoji)
+            option = (index, reaction)
+            if reaction.count == vote_max:
+                results.append(option)
+                continue
+            results = [option]
+            vote_max = reaction.count
         options = [Dismiss(issue)] + issue.options
         results = result(message, issue)
         top_pick, *tied = results
