@@ -216,7 +216,7 @@ class IssueAnswerer(object):
     async def issue_cycle(self):
         issues = await self.nation.issues()
         if not issues:
-            self.channel.send('Nation has no issues. Resuming cycle sleep.')
+            await self.channel.send('Nation has no issues. Resuming cycle sleep.')
             return
 
         while len(issues) > 4:
@@ -226,7 +226,7 @@ class IssueAnswerer(object):
                 await self._close_issue(current_issue, winning_option)
             except LookupError as exc:
                 logger.error('Vote results error.')
-                self.channel.send(*exc.args)
+                await self.channel.send(*exc.args)
                 await self._open_issue(current_issue)
                 issues = [current_issue] + issues
                 await asyncio.sleep(30)
