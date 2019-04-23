@@ -241,8 +241,8 @@ class IssueAnswerer(object):
     async def _issue_cycle_loop(self):
         while True:
             wait_until_next_issue = self.wait_until_next_issue()
-            await self.channel.send(countdown_str(wait_until_next_issue))
-            await asyncio.sleep(wait_until_next_issue)
+            wait_msg = self.channel.send(countdown_str(wait_until_next_issue))
+            await asyncio.gather(wait_msg, asyncio.sleep(wait_until_next_issue))
             try:
                 await self.issue_cycle()
             except Exception:
