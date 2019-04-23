@@ -185,7 +185,6 @@ class IssueAnswerer(object):
             results = [option]
             vote_max = reaction.count
         options = [Dismiss(issue)] + issue.options
-        results = result(message, issue)
         top_pick, *tied = results
         if not tied:
             index, reaction = top_pick
