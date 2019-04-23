@@ -254,7 +254,10 @@ def countdown_str(until_next_issue):
     hours = int(until_next_issue // 3600)
     minutes = int(until_next_issue % 3600 // 60)
     seconds = int(until_next_issue % 60)
-    return f'Issue cycle will sleep {hours} hours, {minutes} minutes, and {seconds} seconds until next issue.'
+    cntdwn_str = (
+        f'Issue cycle will sleep {hours} hours, {minutes} '
+        f'minutes, and {seconds} seconds until next issue.')
+    return cntdwn_str
 
 
 class Dismiss(aionationstates.IssueOption):
