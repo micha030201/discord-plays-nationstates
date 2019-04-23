@@ -231,9 +231,8 @@ class IssueAnswerer(object):
                 issues = [current_issue] + issues
                 await asyncio.sleep(30)
 
-        issues.reverse()
         issue: aionationstates.Issue
-        for issue in issues:
+        for issue in reversed(issues):
             message = await self._get_issue_post(issue)
             if message is not None:
                 continue
