@@ -338,7 +338,7 @@ def teardown():
 
 # Public interface:
 
-def instantiate(nation, channel, owner_id, *, first_issue_offset=0):
+def instantiate(nation, channel, owner_id, *, issues_per_day=4, first_issue_offset=0):
     """Create a new issue-answering job.
 
         Parameters
@@ -349,10 +349,11 @@ def instantiate(nation, channel, owner_id, *, first_issue_offset=0):
             The channel you want the bot to post issues in.
         owner_id : int
             discord app owner identification integer
+        issues_per_day : int
+            How many issues to post per day.
         first_issue_offset : int
             How soon after UTC midnight to post the first issue of the day.
         """
-    issues_per_day = 5
     between_issues = datetime.timedelta(hours=24 / issues_per_day)
 
     assert first_issue_offset >= 0, (
