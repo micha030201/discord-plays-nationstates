@@ -54,7 +54,7 @@ def main():
     bot.load_extension('core')
     config_channel = int(config['GuildNation']['channel'])
     offset = float(config['GuildNation']['utc_start'])
-    issues = int(config['GuildNation']['issues'])
+    issues = int(config['GuildNation']['daily_issues'])
 
     @bot.event
     @utils.call_once
