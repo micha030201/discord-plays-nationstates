@@ -32,6 +32,7 @@ EMOJIS = ('0⃣', '1⃣', '2⃣', '3⃣', '4⃣', '5⃣', '6⃣', '7⃣', '8⃣'
 
 
 def census_difference(census_change):
+    scale: aionationstates.CensusScaleChange
     results = (
         (scale.info.title, scale.pchange)
         for scale in census_change)
@@ -66,8 +67,8 @@ class IssueAnswerer(object):
     async def info(self):
         return await self.nation.description()
 
-    async def countdown(self):
-        wait_until_next_issue = self.wait_until_next_issue()
+    def countdown(self):
+        wait_until_next_issue = self.get_wait_until_next_issue()
         return countdown_str(wait_until_next_issue)
 
     async def _close_issue(self, issue: aionationstates.Issue, option: aionationstates.IssueOption):
@@ -163,11 +164,7 @@ class IssueAnswerer(object):
                 return message
         return None
 
-    async def _vote_results(self, issue: aionationstates.Issue):
-
-        message = await self._get_issue_post(issue)
-        if message is None:
-            raise LookupError(f'Issue #{issue.id} not found in recent channel history.')
+    async def _vote_results(self, message: discord.Message, issue: aionationstates.Issue):
         vote_max = 0
         reaction: discord.Reaction
         debug_str = 'Found reaction (%s) with (%d) votes.'
@@ -204,7 +201,7 @@ class IssueAnswerer(object):
         tied_options = [options[index] for index, users in results]
         return random.choice(tied_options)
 
-    def wait_until_next_issue(self):
+    def get_wait_until_next_issue(self):
         utc_now = datetime.datetime.utcnow()
         last_midnight = utc_now.replace(hour=0, minute=0, second=0, microsecond=0)
         since_first_issue_today = utc_now - (last_midnight + self.first_issue_offset)
@@ -213,40 +210,45 @@ class IssueAnswerer(object):
         return until_next_issue.total_seconds()
 
     async def issue_cycle(self):
-        issues = await self.nation.issues()
-        if not issues:
-            await self.channel.send('Nation has no issues. Resuming cycle sleep.')
+        remaining_issues = await self.nation.issues()
+        if not remaining_issues:
+            await self.channel.send('Nation has no issues.')
             return
 
-        while len(issues) > 4:
-            try:
-                *issues, current_issue = issues
-                winning_option = await self._vote_results(current_issue)
-                await self._close_issue(current_issue, winning_option)
-            except LookupError as exc:
-                logger.error('Vote results error.')
-                await self.channel.send(*exc.args)
-                await self._open_issue(current_issue)
-                issues = [current_issue] + issues
-                await asyncio.sleep(30)
-
+        next_issue = None
         issue: aionationstates.Issue
-        for issue in reversed(issues):
-            message = await self._get_issue_post(issue)
-            if message is not None:
-                continue
-            await self._open_issue(issue)
+        while remaining_issues:
+            *remaining_issues, current_issue = remaining_issues
+            message = await self._get_issue_post(current_issue)
+            if message is None:
+                await self._open_issue(current_issue)
+                next_issue = next_issue or False
+            elif len(remaining_issues) >= 4:
+                winning_option = await self._vote_results(message, current_issue)
+                await self._close_issue(current_issue, winning_option)
+            elif next_issue is None:
+                next_issue = current_issue
+        return next_issue
 
     async def _issue_cycle_loop(self):
+        next_issue: aionationstates.Issue = None
         while True:
-            wait_until_next_issue = self.wait_until_next_issue()
-            wait_msg = self.channel.send(countdown_str(wait_until_next_issue))
-            await asyncio.gather(wait_msg, asyncio.sleep(wait_until_next_issue))
+            wait_until_next_issue = self.get_wait_until_next_issue()
+            coros_or_futures = [asyncio.sleep(wait_until_next_issue)]
+            if next_issue:
+                embed = discord.Embed(
+                    title=next_issue.title,
+                    description=html_to_md(next_issue.text),
+                    colour=discord.Colour(0xfdc82f))
+                cntdwn_str = countdown_str(wait_until_next_issue)
+                wait_msg = self.channel.send(cntdwn_str, embed=embed)
+                coros_or_futures.append(wait_msg)
+            await asyncio.gather(*coros_or_futures)
             try:
-                await self.issue_cycle()
+                next_issue = await self.issue_cycle()
             except Exception:
                 logger.exception('Error while cycling issues:')
-                await self.channel.send('Issue cycle error. Resuming cycle sleep.')
+                await self.channel.send('Issue cycle error.')
 
 
 def countdown_str(until_next_issue):
@@ -293,7 +295,7 @@ async def countdown(ctx, nation: aionationstates.Nation = None):
     else:
         jobs = nations_to_jobs.values()
 
-    messages = await asyncio.gather(*[job.countdown() for job in jobs])
+    messages = [job.countdown() for job in jobs]
     await asyncio.gather(*map(ctx.send, messages))
 
 
@@ -303,10 +305,22 @@ async def scroll(ctx, nation: aionationstates.Nation = None):
     """Switch the issues manually."""
     nations_to_jobs = {job.nation: job for job in _jobs}
 
-    if nation is None and len(nations_to_jobs) == 1:
-        await nations_to_jobs.popitem()[1].issue_cycle()
+    if nation is not None:
+        job = nations_to_jobs[nation]
+    elif len(nations_to_jobs) == 1:
+        job = nations_to_jobs.popitem()[1]
     else:
-        await nations_to_jobs[nation].issue_cycle()
+        return
+    next_issue = await job.issue_cycle()
+    cntdwn_str = job.countdown()
+
+    if not next_issue:
+        return
+    embed = discord.Embed(
+        title=next_issue.title,
+        description=html_to_md(next_issue.text),
+        colour=discord.Colour(0xfdc82f))
+    await ctx.send(cntdwn_str, embed=embed)
 
 
 @commands.command(hidden=True)
