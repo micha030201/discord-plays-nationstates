@@ -111,15 +111,14 @@ def _main():
         required=True
         )
 
-    optional = parser.add_argument_group('optional arguments')
-    optional.add_argument(
+    parser.add_argument(
         '--issues',
         type=int,
         required=False,
         default=4,
         choices=range(1, 5),
         help='Number of issues to request per day.')
-    optional.add_argument(
+    parser.add_argument(
         '--offset',
         type=float,
         required=False,
