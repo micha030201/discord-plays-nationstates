@@ -169,7 +169,7 @@ class IssueAnswerer(object):
         reaction: discord.Reaction
         debug_str = 'Found reaction (%s) with (%d) votes.'
         for reaction in message.reactions:
-            if reaction.emoji not in EMOJIS:
+            if not reaction.me:
                 continue
             logger.debug(debug_str, reaction.emoji, reaction.count)
             if reaction.count < vote_max:
@@ -216,6 +216,7 @@ class IssueAnswerer(object):
             return
 
         next_issue = None
+        next_issue_message = None
         issue: aionationstates.Issue
         while remaining_issues:
             *remaining_issues, current_issue = remaining_issues
@@ -228,22 +229,33 @@ class IssueAnswerer(object):
                 await self._close_issue(current_issue, winning_option)
             elif next_issue is None:
                 next_issue = current_issue
-        return next_issue
+                next_issue_message = message
+        if next_issue:
+            embed = discord.Embed(
+                title=next_issue.title,
+                description=html_to_md(next_issue.text),
+                colour=discord.Colour(0xfdc82f))
+        else:
+            embed = None
+        wait_until_next_issue = self.get_wait_until_next_issue()
+        cntdwn_str = countdown_str(wait_until_next_issue)
+        await self.channel.send(cntdwn_str, embed=embed)
+        if not next_issue_message:
+            return
+        reaction: discord.Reaction
+        for reaction in next_issue_message.reactions:
+            if not reaction.me:
+                continue
+            if reaction.count > 1:
+                return
+        msg_str = f'There are no votes yet <@{self.owner_id}>!'
+        await self.channel.send(msg_str)
 
     async def _issue_cycle_loop(self):
         next_issue: aionationstates.Issue = None
         while True:
             wait_until_next_issue = self.get_wait_until_next_issue()
-            coros_or_futures = [asyncio.sleep(wait_until_next_issue)]
-            if next_issue:
-                embed = discord.Embed(
-                    title=next_issue.title,
-                    description=html_to_md(next_issue.text),
-                    colour=discord.Colour(0xfdc82f))
-                cntdwn_str = countdown_str(wait_until_next_issue)
-                wait_msg = self.channel.send(cntdwn_str, embed=embed)
-                coros_or_futures.append(wait_msg)
-            await asyncio.gather(*coros_or_futures)
+            await asyncio.sleep(wait_until_next_issue)
             try:
                 next_issue = await self.issue_cycle()
             except Exception:
@@ -311,16 +323,7 @@ async def scroll(ctx, nation: aionationstates.Nation = None):
         job = nations_to_jobs.popitem()[1]
     else:
         return
-    next_issue = await job.issue_cycle()
-    cntdwn_str = job.countdown()
-
-    if not next_issue:
-        return
-    embed = discord.Embed(
-        title=next_issue.title,
-        description=html_to_md(next_issue.text),
-        colour=discord.Colour(0xfdc82f))
-    await ctx.send(cntdwn_str, embed=embed)
+    await job.issue_cycle()
 
 
 @commands.command(hidden=True)
