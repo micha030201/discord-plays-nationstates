@@ -146,7 +146,7 @@ class IssueAnswerer(object):
 
         reactions = []
         for option, emoji in zip([Dismiss(issue)] + issue.options, EMOJIS):
-            embed.add_field(name=emoji + ':', value=html_to_md(option.text))
+            embed.add_field(name=emoji + ':', value=html_to_md(option.text), inline=False)
             reactions.append(emoji)
 
         message = await self.channel.send(f'Issue #{issue.id}:', embed=embed)
