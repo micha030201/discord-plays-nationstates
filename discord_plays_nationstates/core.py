@@ -319,9 +319,10 @@ async def scroll(ctx, nation: aionationstates.Nation = None):
 
     if nation is not None:
         job = nations_to_jobs[nation]
-    elif len(nations_to_jobs) == 1:
-        job = nations_to_jobs.popitem()[1]
+    elif len(_jobs) == 1:
+        job = _jobs[0]
     else:
+        logger.error('Scroll failed, nation not specified and found %d jobs.', len(_jobs))
         return
     await job.issue_cycle()
 

@@ -5,7 +5,6 @@ from discord.ext import commands
 import aionationstates
 
 import utils
-import core
 
 logging.config.dictConfig({
     "version": 1,
@@ -52,6 +51,7 @@ def main():
     aionationstates.set_user_agent(config['Bot']['useragent'])
 
     bot.load_extension('core')
+    core = bot.extensions['core']
     config_channel = int(config['GuildNation']['channel'])
     offset = float(config['GuildNation']['utc_start'])
     issues = int(config['GuildNation']['daily_issues'])
@@ -133,6 +133,7 @@ def _main():
     aionationstates.set_user_agent(args.useragent)
 
     bot.load_extension('core')
+    core = bot.extensions['core']
 
 
     @bot.event
