@@ -9,7 +9,7 @@ Installation
 .. code-block::
 
    pip install discord-plays-nationstates
-   pip install -U git+https://github.com/Rapptz/discord.py@rewrite#egg=discord.py
+   pip install -U git+https://github.com/Rapptz/discord.py#egg=discord.py
    discord-plays-nationstates \
       --token YOUR_DISCORD_API_TOKEN \
       --useragent YOUR_NATIONSTATES_USERAGENT \
