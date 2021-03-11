@@ -1,11 +1,13 @@
-import random
+# Standard
 import asyncio
-import logging
-
+import collections
 import datetime
+import logging
 import operator
+import random
 import itertools
 
+# External
 import aionationstates
 import discord
 from discord.ext import commands
@@ -31,6 +33,18 @@ def html_to_md(html):
 EMOJIS = ('0⃣', '1⃣', '2⃣', '3⃣', '4⃣', '5⃣', '6⃣', '7⃣', '8⃣', '9⃣', '🔟')
 
 
+def text_fragments(text: str, sep='. ', limit=1024):
+    fragment: str
+    fragment_list = []
+    for fragment in text.split(sep):
+        if fragment_list and len(sep.join(fragment_list + [fragment])) > limit:
+            yield sep.join(fragment_list)
+            fragment_list = [fragment]
+        else:
+            fragment_list.append(fragment)
+    yield sep.join(fragment_list)
+
+
 def census_difference(census_change):
     scale: aionationstates.CensusScaleChange
     results = (
@@ -54,6 +68,10 @@ def census_difference(census_change):
 # Bot class:
 
 class IssueAnswerer(object):
+    issue_open_colour = discord.Colour(0xfdc82f)
+    issue_result_colour = discord.Colour(0xde3831)
+    banner_colour = discord.Colour(0x36393e)
+
     def __init__(self, first_issue_offset, between_issues, nation, channel, owner_id):
         self.first_issue_offset = first_issue_offset
         self.between_issues = between_issues
@@ -73,13 +91,16 @@ class IssueAnswerer(object):
 
     async def _close_issue(self, issue: aionationstates.Issue, option: aionationstates.IssueOption):
         issue_result: aionationstates.IssueResult = await option.accept()
-        embed = discord.Embed(
-            title=issue.title,
-            description=html_to_md(issue.text),
-            colour=discord.Colour(0xde3831))
+        md_text = html_to_md(issue.text)
+        embed = discord.Embed(title=issue.title, description=md_text, colour=self.issue_result_colour)
 
         # Selected option:
-        embed.add_field(name=':white_check_mark::', inline=False, value=html_to_md(option.text))
+        name = ':white_check_mark::'
+        md_text = html_to_md(option.text)
+        fragment_gen = text_fragments(md_text)
+        for index, partial_text in enumerate(fragment_gen, start=1):
+            embed.add_field(name=name, value=partial_text, inline=False)
+            name = ':white_check_mark::-%d' % index
 
         # Effect line + reclassifications:
         effect_line = issue_result.effect_line or 'issue was dismissed'
@@ -103,19 +124,13 @@ class IssueAnswerer(object):
 
         # Banners:
         async def post_banner(banner):
-            embed = discord.Embed(
-                title=banner.name,
-                description=banner.validity,
-                colour=discord.Colour(0x36393e))
+            embed = discord.Embed(title=banner.name, description=banner.validity, colour=banner_colour)
             embed.set_image(url=banner.url)
             await self.channel.send('New banner unlocked:', embed=embed)
 
         # Policies:
         def policy_embed(policy):
-            embed = discord.Embed(
-                title=policy.name,
-                description=policy.description,
-                colour=discord.Colour(0x36393e))
+            embed = discord.Embed(title=policy.name, description=policy.description, colour=banner_colour)
             embed.set_image(url=policy.banner)
             return embed
 
@@ -131,11 +146,9 @@ class IssueAnswerer(object):
             *map(post_removed_policy, issue_result.removed_policies))
 
     async def _open_issue(self, issue: aionationstates.Issue):
-        embed = discord.Embed(
-            title=issue.title,
-            description=html_to_md(issue.text),
-            colour=discord.Colour(0xfdc82f),
-            timestamp=datetime.datetime.utcnow())
+        md_text = html_to_md(issue.text)
+        utcnow = datetime.datetime.utcnow()
+        embed = discord.Embed(title=issue.title, description=md_text, colour=self.issue_open_colour, timestamp=utcnow)
 
         if issue.banners:
             banner_url, *extra = issue.banners
@@ -146,7 +159,12 @@ class IssueAnswerer(object):
 
         reactions = []
         for option, emoji in zip([Dismiss(issue)] + issue.options, EMOJIS):
-            embed.add_field(name=emoji + ':', value=html_to_md(option.text), inline=False)
+            name = emoji + ':'
+            md_text = html_to_md(option.text)
+            fragment_gen = text_fragments(md_text)
+            for index, partial_text in enumerate(fragment_gen, start=1):
+                embed.add_field(name=name, value=partial_text, inline=False)
+                name = emoji + ':-%d' % index
             reactions.append(emoji)
 
         message = await self.channel.send(f'Issue #{issue.id}:', embed=embed)
@@ -165,27 +183,25 @@ class IssueAnswerer(object):
         return None
 
     async def _vote_results(self, message: discord.Message, issue: aionationstates.Issue):
-        vote_max = 0
+        reactions_grouped_by_count = collections.defaultdict(list)
         reaction: discord.Reaction
         debug_str = 'Found reaction (%s) with (%d) votes.'
         for reaction in message.reactions:
             if not reaction.me:
                 continue
+
             logger.debug(debug_str, reaction.emoji, reaction.count)
-            if reaction.count < vote_max:
-                continue
-            index = EMOJIS.index(reaction.emoji)
-            option = (index, reaction)
-            if reaction.count == vote_max:
-                results.append(option)
-                continue
-            results = [option]
-            vote_max = reaction.count
+            results = reactions_grouped_by_count[reaction.count]
+            results.append(reaction)
+
         options = [Dismiss(issue)] + issue.options
+        max_count = max(reactions_grouped_by_count)
+        results = reactions_grouped_by_count[max_count]
         top_pick, *tied = results
         if not tied:
-            index, reaction = top_pick
+            index = EMOJIS.index(top_pick.emoji)
             return options[index]
+
         logger.info('Vote is tied, looking for tie breaker: %s', self.owner_id)
         owner_picks = []
         reaction: discord.Reaction
@@ -194,10 +210,12 @@ class IssueAnswerer(object):
             voter_set = set(voter.id for voter in voters)
             if self.owner_id in voter_set:
                 owner_picks.append(options[index])
+
         if owner_picks:
             if len(owner_picks) == 1:
                 logger.info('App owner breaks tie.')
             return random.choice(owner_picks)
+
         tied_options = [options[index] for index, users in results]
         return random.choice(tied_options)
 
@@ -226,15 +244,16 @@ class IssueAnswerer(object):
                 next_issue = next_issue or False
             elif len(remaining_issues) >= 4:
                 winning_option = await self._vote_results(message, current_issue)
-                await self._close_issue(current_issue, winning_option)
+                try:
+                    await self._close_issue(current_issue, winning_option)
+                except AttributeError:
+                    await self.channel.send('Close issue error.')
             elif next_issue is None:
                 next_issue = current_issue
                 next_issue_message = message
         if next_issue:
-            embed = discord.Embed(
-                title=next_issue.title,
-                description=html_to_md(next_issue.text),
-                colour=discord.Colour(0xfdc82f))
+            md_text = html_to_md(next_issue.text)
+            embed = discord.Embed(title=next_issue.title, description=md_text, colour=self.issue_open_colour)
         else:
             embed = None
         wait_until_next_issue = self.get_wait_until_next_issue()
