@@ -183,41 +183,39 @@ class IssueAnswerer(object):
         return None
 
     async def _vote_results(self, message: discord.Message, issue: aionationstates.Issue):
+        option_per_react_id = {}
         reactions_grouped_by_count = collections.defaultdict(list)
         reaction: discord.Reaction
         debug_str = 'Found reaction (%s) with (%d) votes.'
+        options = [Dismiss(issue)] + issue.options
         for reaction in message.reactions:
             if not reaction.me:
                 continue
 
+            assert options, 'Too many reactions for the set of options.'
             logger.debug(debug_str, reaction.emoji, reaction.count)
-            results = reactions_grouped_by_count[reaction.count]
-            results.append(reaction)
+            reactions_grouped_by_count[reaction.count].append(reaction)
+            option_per_react_id[id(reaction)], *options = options
 
-        options = [Dismiss(issue)] + issue.options
+        assert not options, 'One or more options lack a reaction.'
         max_count = max(reactions_grouped_by_count)
         results = reactions_grouped_by_count[max_count]
-        top_pick, *tied = results
-        if not tied:
-            index = EMOJIS.index(top_pick.emoji)
-            return options[index]
 
-        logger.info('Vote is tied, looking for tie breaker: %s', self.owner_id)
         owner_picks = []
-        reaction: discord.Reaction
-        for index, reaction in results:
+        tied_options = []
+        for reaction in results:
+            react_option = option_per_react_id[id(reaction)]
             voters = await reaction.users().flatten()
             voter_set = set(voter.id for voter in voters)
             if self.owner_id in voter_set:
-                owner_picks.append(options[index])
+                owner_picks.append(react_option)
+            tied_options.append(react_option)
 
-        if owner_picks:
-            if len(owner_picks) == 1:
-                logger.info('App owner breaks tie.')
-            return random.choice(owner_picks)
+        if not owner_picks:
+            return random.choice(tied_options)
 
-        tied_options = [options[index] for index, users in results]
-        return random.choice(tied_options)
+        return random.choice(owner_picks)
+
 
     def get_wait_until_next_issue(self):
         utc_now = datetime.datetime.utcnow()
