@@ -245,7 +245,7 @@ class IssueAnswerer(object):
                 try:
                     await self._close_issue(current_issue, winning_option)
                 except AttributeError:
-                    await self.channel.send('Close issue error.')
+                    await self.channel.send(f'Close issue error. Pls fix <@{self.owner_id}>')
             elif next_issue is None:
                 next_issue = current_issue
                 next_issue_message = message
@@ -277,7 +277,7 @@ class IssueAnswerer(object):
                 next_issue = await self.issue_cycle()
             except Exception:
                 logger.exception('Error while cycling issues:')
-                await self.channel.send('Issue cycle error.')
+                await self.channel.send(f'Issue cycle error. Pls fix <@{self.owner_id}>')
 
 
 def countdown_str(until_next_issue):
