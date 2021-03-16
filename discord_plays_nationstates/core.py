@@ -124,13 +124,13 @@ class IssueAnswerer(object):
 
         # Banners:
         async def post_banner(banner):
-            embed = discord.Embed(title=banner.name, description=banner.validity, colour=banner_colour)
+            embed = discord.Embed(title=banner.name, description=banner.validity, colour=self.banner_colour)
             embed.set_image(url=banner.url)
             await self.channel.send('New banner unlocked:', embed=embed)
 
         # Policies:
         def policy_embed(policy):
-            embed = discord.Embed(title=policy.name, description=policy.description, colour=banner_colour)
+            embed = discord.Embed(title=policy.name, description=policy.description, colour=self.banner_colour)
             embed.set_image(url=policy.banner)
             return embed
 
@@ -291,6 +291,7 @@ def countdown_str(until_next_issue):
 
 
 class Dismiss(aionationstates.IssueOption):
+    ''' Option to dismiss issue. '''
 
     def __init__(self, issue):
         self._issue = issue
