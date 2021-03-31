@@ -162,11 +162,10 @@ class IssueAnswerer(object):
         reactions = []
         options = [Dismiss(issue)] + issue.options
         max_option_id = max(option._id for option in issue.options)
-        zodiac_emoji = 12 >= max_option_id > 10
+        if max_option_id > 12:
+            raise ValueError(f'Issue has a {max_option_id}th option which has no emoji set.')
         for option in options:
-            if max_option_id > 12:
-                raise ValueError(f'Issue has a {max_option_id}th option which has no emoji set.')
-            elif max_option_id > 10:
+            if max_option_id > 10:
                 emoji = EMOJIS_EXT[option._id + 1]
             else:
                 emoji = EMOJIS[option._id + 1]
