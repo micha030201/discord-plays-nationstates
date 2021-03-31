@@ -10,7 +10,7 @@ import itertools
 # External
 import aionationstates
 import discord
-from discord.ext import commands
+import discord.ext.commands as discord_cmds
 
 
 logger = logging.getLogger('discord-plays-nationstates')
@@ -31,6 +31,7 @@ def html_to_md(html):
 
 
 EMOJIS = ('0⃣', '1⃣', '2⃣', '3⃣', '4⃣', '5⃣', '6⃣', '7⃣', '8⃣', '9⃣', '🔟')
+EMOJIS_EXT = ('♈', '♉', '♊', '♋', '♌', '♍', '♎', '♏', '♐', '♑', '♒', '♓', '⛎')
 
 
 def text_fragments(text: str, sep='. ', limit=1024):
@@ -158,7 +159,16 @@ class IssueAnswerer(object):
         embed.set_thumbnail(url=nation_flag)
 
         reactions = []
-        for option, emoji in zip([Dismiss(issue)] + issue.options, EMOJIS):
+        options = [Dismiss(issue)] + issue.options
+        max_option_id = max(option._id for option in issue.options)
+        zodiac_emoji = 12 >= max_option_id > 10
+        for option in options:
+            if max_option_id > 12:
+                raise ValueError(f'Issue has a {max_option_id}th option which has no emoji set.')
+            elif max_option_id > 10:
+                emoji = EMOJIS_EXT[option._id + 1]
+            else:
+                emoji = EMOJIS[option._id + 1]
             name = emoji + ':'
             md_text = html_to_md(option.text)
             fragment_gen = text_fragments(md_text)
@@ -301,7 +311,7 @@ class Dismiss(aionationstates.IssueOption):
 
 # Commands:
 
-@commands.command()
+@discord_cmds.command()
 async def issues(ctx, nation: aionationstates.Nation = None):
     """What's this?"""
     nations_to_jobs = {job.nation: job for job in _jobs if job.channel in ctx.guild.channels}
@@ -315,7 +325,7 @@ async def issues(ctx, nation: aionationstates.Nation = None):
     await asyncio.gather(*map(ctx.send, messages))
 
 
-@commands.command()
+@discord_cmds.command()
 async def countdown(ctx, nation: aionationstates.Nation = None):
     """Report time to next auto cycle."""
     nations_to_jobs = {job.nation: job for job in _jobs if job.channel in ctx.guild.channels}
@@ -329,8 +339,8 @@ async def countdown(ctx, nation: aionationstates.Nation = None):
     await asyncio.gather(*map(ctx.send, messages))
 
 
-@commands.command(hidden=True)
-@commands.is_owner()
+@discord_cmds.command(hidden=True)
+@discord_cmds.is_owner()
 async def scroll(ctx, nation: aionationstates.Nation = None):
     """Switch the issues manually."""
     nations_to_jobs = {job.nation: job for job in _jobs}
@@ -345,11 +355,11 @@ async def scroll(ctx, nation: aionationstates.Nation = None):
     await job.issue_cycle()
 
 
-@commands.command(hidden=True)
-@commands.is_owner()
-async def shutdown(ctx: commands.Context, nation: aionationstates.Nation = None):
+@discord_cmds.command(hidden=True)
+@discord_cmds.is_owner()
+async def shutdown(ctx: discord_cmds.Context, nation: aionationstates.Nation = None):
     teardown()
-    bot: commands.Bot = ctx.bot
+    bot: discord_cmds.Bot = ctx.bot
     await bot.close()
 
 
