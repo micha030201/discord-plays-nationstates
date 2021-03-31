@@ -1,10 +1,13 @@
+# Standard
 import traceback
 import logging.config
 
-from discord.ext import commands
+# External
 import aionationstates
+import discord.ext.commands as discord_cmds
 
-import utils
+# Internal
+from discord_plays_nationstates import utils
 
 logging.config.dictConfig({
     "version": 1,
@@ -40,7 +43,7 @@ logging.config.dictConfig({
         }
     })
 logger = logging.getLogger('discord-plays-nationstates')
-bot = commands.Bot(command_prefix='.')
+bot = discord_cmds.Bot(command_prefix='.')
 
 def main():
     import configparser
@@ -67,10 +70,10 @@ def main():
 
     @bot.event
     async def on_command_error(ctx, error):
-        if isinstance(error, commands.CommandNotFound):
+        if isinstance(error, discord_cmds.CommandNotFound):
             return
 
-        if isinstance(error, commands.CommandInvokeError):
+        if isinstance(error, discord_cmds.CommandInvokeError):
             error_str = (
                 f'In {ctx.command.qualified_name}:\n'
                 + ''.join(traceback.format_tb(error.original.__traceback__))
@@ -151,10 +154,10 @@ def _main():
 
     @bot.event
     async def on_command_error(ctx, error):
-        if isinstance(error, commands.CommandNotFound):
+        if isinstance(error, discord_cmds.CommandNotFound):
             return
 
-        if isinstance(error, commands.CommandInvokeError):
+        if isinstance(error, discord_cmds.CommandInvokeError):
             error_str = (
                 f'In {ctx.command.qualified_name}:\n'
                 + ''.join(traceback.format_tb(error.original.__traceback__))

@@ -10,7 +10,7 @@ import itertools
 # External
 import aionationstates
 import discord
-from discord.ext import commands
+import discord.ext.commands as discord_cmds
 
 
 logger = logging.getLogger('discord-plays-nationstates')
@@ -300,7 +300,7 @@ class Dismiss(aionationstates.IssueOption):
 
 # Commands:
 
-@commands.command()
+@discord_cmds.command()
 async def issues(ctx, nation: aionationstates.Nation = None):
     """What's this?"""
     nations_to_jobs = {job.nation: job for job in _jobs if job.channel in ctx.guild.channels}
@@ -314,7 +314,7 @@ async def issues(ctx, nation: aionationstates.Nation = None):
     await asyncio.gather(*map(ctx.send, messages))
 
 
-@commands.command()
+@discord_cmds.command()
 async def countdown(ctx, nation: aionationstates.Nation = None):
     """Report time to next auto cycle."""
     nations_to_jobs = {job.nation: job for job in _jobs if job.channel in ctx.guild.channels}
@@ -328,8 +328,8 @@ async def countdown(ctx, nation: aionationstates.Nation = None):
     await asyncio.gather(*map(ctx.send, messages))
 
 
-@commands.command(hidden=True)
-@commands.is_owner()
+@discord_cmds.command(hidden=True)
+@discord_cmds.is_owner()
 async def scroll(ctx, nation: aionationstates.Nation = None):
     """Switch the issues manually."""
     nations_to_jobs = {job.nation: job for job in _jobs}
@@ -344,11 +344,11 @@ async def scroll(ctx, nation: aionationstates.Nation = None):
     await job.issue_cycle()
 
 
-@commands.command(hidden=True)
-@commands.is_owner()
-async def shutdown(ctx: commands.Context, nation: aionationstates.Nation = None):
+@discord_cmds.command(hidden=True)
+@discord_cmds.is_owner()
+async def shutdown(ctx: discord_cmds.Context, nation: aionationstates.Nation = None):
     teardown()
-    bot: commands.Bot = ctx.bot
+    bot: discord_cmds.Bot = ctx.bot
     await bot.close()
 
 
