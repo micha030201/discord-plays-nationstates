@@ -79,7 +79,7 @@ class IssueAnswerer(object):
         self.channel = channel
         self.nation = nation
 
-        my_task = self._issue_cycle_loop()
+        my_task = self.issue_cycle_loop()
         self.task = asyncio.get_event_loop().create_task(my_task)
 
     async def info(self):
@@ -89,7 +89,7 @@ class IssueAnswerer(object):
         wait_until_next_issue = self.get_wait_until_next_issue()
         return countdown_str(wait_until_next_issue)
 
-    async def _close_issue(self, issue: aionationstates.Issue, option: aionationstates.IssueOption):
+    async def close_issue(self, issue: aionationstates.Issue, option: aionationstates.IssueOption):
         issue_result: aionationstates.IssueResult = await option.accept()
         md_text = html_to_md(issue.text)
         embed = discord.Embed(title=issue.title, description=md_text, colour=self.issue_result_colour)
@@ -143,9 +143,10 @@ class IssueAnswerer(object):
         await asyncio.gather(
             *map(post_banner, issue_result.banners),
             *map(post_new_policy, issue_result.new_policies),
-            *map(post_removed_policy, issue_result.removed_policies))
+            *map(post_removed_policy, issue_result.removed_policies),
+            )
 
-    async def _open_issue(self, issue: aionationstates.Issue):
+    async def open_issue(self, issue: aionationstates.Issue):
         md_text = html_to_md(issue.text)
         utcnow = datetime.datetime.utcnow()
         embed = discord.Embed(title=issue.title, description=md_text, colour=self.issue_open_colour, timestamp=utcnow)
@@ -171,18 +172,7 @@ class IssueAnswerer(object):
         for emoji in reactions:
             await message.add_reaction(emoji)
 
-    async def _get_issue_post(self, issue: aionationstates.Issue):
-        message: discord.Message
-        async for message in self.channel.history(limit=50):
-            if message.author != self.channel.guild.me:
-                continue
-            if not message.content.startswith('Issue #'):
-                continue
-            if message.content == f'Issue #{issue.id}:':
-                return message
-        return None
-
-    async def _vote_results(self, message: discord.Message, issue: aionationstates.Issue):
+    async def vote_results(self, message: discord.Message, issue: aionationstates.Issue):
         option_per_react_id = {}
         reactions_grouped_by_count = collections.defaultdict(list)
         reaction: discord.Reaction
@@ -216,7 +206,6 @@ class IssueAnswerer(object):
 
         return random.choice(owner_picks)
 
-
     def get_wait_until_next_issue(self):
         utc_now = datetime.datetime.utcnow()
         last_midnight = utc_now.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -238,12 +227,12 @@ class IssueAnswerer(object):
             *remaining_issues, current_issue = remaining_issues
             message = await self._get_issue_post(current_issue)
             if message is None:
-                await self._open_issue(current_issue)
+                await self.open_issue(current_issue)
                 next_issue = next_issue or False
             elif len(remaining_issues) >= 4:
-                winning_option = await self._vote_results(message, current_issue)
+                winning_option = await self.vote_results(message, current_issue)
                 try:
-                    await self._close_issue(current_issue, winning_option)
+                    await self.close_issue(current_issue, winning_option)
                 except AttributeError:
                     await self.channel.send(f'Close issue error. Pls fix <@{self.owner_id}>')
             elif next_issue is None:
@@ -268,7 +257,18 @@ class IssueAnswerer(object):
         msg_str = f'There are no votes yet <@{self.owner_id}>!'
         await self.channel.send(msg_str)
 
-    async def _issue_cycle_loop(self):
+    async def _get_issue_post(self, issue: aionationstates.Issue):
+        message: discord.Message
+        async for message in self.channel.history(limit=50):
+            if message.author != self.channel.guild.me:
+                continue
+            if not message.content.startswith('Issue #'):
+                continue
+            if message.content == f'Issue #{issue.id}:':
+                return message
+        return None
+
+    async def issue_cycle_loop(self):
         next_issue: aionationstates.Issue = None
         while True:
             wait_until_next_issue = self.get_wait_until_next_issue()
