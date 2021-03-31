@@ -269,12 +269,11 @@ class IssueAnswerer(object):
         return None
 
     async def issue_cycle_loop(self):
-        next_issue: aionationstates.Issue = None
         while True:
             wait_until_next_issue = self.get_wait_until_next_issue()
             await asyncio.sleep(wait_until_next_issue)
             try:
-                next_issue = await self.issue_cycle()
+                await self.issue_cycle()
             except Exception:
                 logger.exception('Error while cycling issues:')
                 await self.channel.send(f'Issue cycle error. Pls fix <@{self.owner_id}>')
