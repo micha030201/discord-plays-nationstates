@@ -1,13 +1,11 @@
 # Standard
+import functools
 import traceback
 import logging.config
 
 # External
 import aionationstates
 import discord.ext.commands as discord_cmds
-
-# Internal
-from discord_plays_nationstates import utils
 
 logging.config.dictConfig({
     "version": 1,
@@ -60,7 +58,7 @@ def main():
     issues = int(config['GuildNation']['daily_issues'])
 
     @bot.event
-    @utils.call_once
+    @call_once
     async def on_ready():
         channel = bot.get_channel(config_channel)
         assert channel is not None, f'Parsed int {config_channel} did not match channel.'
@@ -140,7 +138,7 @@ def _main():
 
 
     @bot.event
-    @utils.call_once
+    @call_once
     async def on_ready():
         channel = bot.get_channel(args.channel)
         nation = aionationstates.NationControl(args.nation, password=args.password)
@@ -165,6 +163,17 @@ def _main():
             logger.error(error_str)
 
     bot.run(args.token)
+
+def call_once(func):
+    called_already = False
+
+    @functools.wraps(func)
+    async def wrapper(*args, **kwargs):
+        nonlocal called_already
+        if not called_already:
+            called_already = True
+            return await func(*args, **kwargs)
+    return wrapper
 
 if __name__ == "__main__":
     _main()
