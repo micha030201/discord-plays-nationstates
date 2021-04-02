@@ -243,20 +243,27 @@ class IssueAnswerer(object):
                 try:
                     await self.close_issue(current_issue, winning_option)
                 except AttributeError:
-                    await self.channel.send(f'Close issue error. Pls fix <@{self.owner_id}>')
+                    msg_str = f'Close issue error. Pls fix <@{self.owner_id}>'
+                    await self.channel.send(msg_str)
+                self.verify_remaining_issues(remaining_issues)
             elif next_issue is None:
                 next_issue = current_issue
                 next_issue_message = message
-        if next_issue:
-            md_text = html_to_md(next_issue.text)
-            embed = discord.Embed(title=next_issue.title, description=md_text, colour=self.issue_open_colour)
-        else:
-            embed = None
         wait_until_next_issue = self.get_wait_until_next_issue()
         cntdwn_str = countdown_str(wait_until_next_issue)
-        await self.channel.send(cntdwn_str, embed=embed)
+        if next_issue:
+            embed = discord.Embed(
+                title=next_issue.title,
+                description=html_to_md(next_issue.text),
+                colour=self.issue_open_colour,
+                )
+            await self.channel.send(cntdwn_str, embed=embed)
+        else:
+            await self.channel.send(cntdwn_str)
+
         if not next_issue_message:
             return
+
         reaction: discord.Reaction
         for reaction in next_issue_message.reactions:
             if not reaction.me:
@@ -265,6 +272,31 @@ class IssueAnswerer(object):
                 return
         msg_str = f'There are no votes yet <@{self.owner_id}>!'
         await self.channel.send(msg_str)
+
+    async def verify_remaining_issues(self, remaining_issues):
+        for issue in remaining_issues:
+            message: discord.Message = await self._get_issue_post(issue)
+            if not message:
+                continue
+
+            required_reactions = set()
+            options = [Dismiss(issue)] + issue.options
+            max_option_id = max(option._id for option in issue.options)
+            if max_option_id > 12:
+                raise ValueError(f'Issue has a {max_option_id}th option which has no emoji set.')
+            for option in options:
+                if max_option_id > 10:
+                    emoji = EMOJIS_EXT[option._id + 1]
+                else:
+                    emoji = EMOJIS[option._id + 1]
+                required_reactions.add(emoji)
+
+            stated_reactions = set(reaction.emoji for reaction in message.reactions if reaction.me)
+
+            if required_reactions != stated_reactions:
+                logger.info(f'Issue #{issue.id} options have changed, post will be deleted and replaced.')
+                await message.delete()
+                await self.channel.send(f'Issue #{issue.id} is being replaced, all previous votes are discarded.')
 
     async def _get_issue_post(self, issue: aionationstates.Issue):
         message: discord.Message
