@@ -180,6 +180,7 @@ class IssueAnswerer(object):
         message = await self.channel.send(f'Issue #{issue.id}:', embed=embed)
         for emoji in reactions:
             await message.add_reaction(emoji)
+        return message
 
     async def vote_results(self, message: discord.Message, issue: aionationstates.Issue):
         option_per_react_id = {}
@@ -232,37 +233,57 @@ class IssueAnswerer(object):
         next_issue = None
         next_issue_message = None
         issue: aionationstates.Issue
+        lookup_issue_by_msg = {f'Issue #{issue.id}:': issue for issue in remaining_issues}
+        logger.info('begin channel history scan, remaining issues %d', len(remaining_issues))
+
+        message: discord.Message
+        channel_guild_me = self.channel.guild.me
+        earliest = datetime.datetime.now() - datetime.timedelta(days=2)
+        async for message in self.channel.history(after=earliest):
+            if message.author != channel_guild_me:
+                continue
+
+            if message.content not in lookup_issue_by_msg:
+                continue
+
+            message_issue: aionationstates.Issue = lookup_issue_by_msg[message.content]
+            has_correct_options = self.verify_issue_message(message, message_issue)
+            if not has_correct_options:
+                logger.info(message.content + ' options have changed, post will be deleted and replaced.')
+                await message.delete()
+                await self.channel.send(message.content + ' is being replaced, all previous votes are discarded.')
+                continue
+
+            if len(remaining_issues) > 4:
+                winning_option = await self.vote_results(message, message_issue)
+                if message.pinned:
+                    await message.unpin()
+                await self.close_issue(message_issue, winning_option)
+            elif next_issue is None:
+                await message.pin()
+                next_issue_message = message
+                next_issue = message_issue
+            remaining_issues = [issue for issue in remaining_issues if issue.id != message_issue.id]
+            logger.info('Processed %s, remaining issues %d', f'{message.content} {message_issue.title}', len(remaining_issues))
+
         while remaining_issues:
             *remaining_issues, current_issue = remaining_issues
-            message = await self._get_issue_post(current_issue)
-            if message is None:
+            if next_issue is not None:
                 await self.open_issue(current_issue)
-                next_issue = next_issue or False
-            elif len(remaining_issues) >= 4:
-                winning_option = await self.vote_results(message, current_issue)
-                try:
-                    await self.close_issue(current_issue, winning_option)
-                except AttributeError:
-                    msg_str = f'Close issue error. Pls fix <@{self.owner_id}>'
-                    await self.channel.send(msg_str)
-                self.verify_remaining_issues(remaining_issues)
-            elif next_issue is None:
-                next_issue = current_issue
-                next_issue_message = message
+                continue
+            next_issue = current_issue
+            next_issue_message = await self.open_issue(current_issue)
+            await next_issue_message.pin()
+
         wait_until_next_issue = self.get_wait_until_next_issue()
         cntdwn_str = countdown_str(wait_until_next_issue)
-        if next_issue:
-            embed = discord.Embed(
-                title=next_issue.title,
-                description=html_to_md(next_issue.text),
-                colour=self.issue_open_colour,
-                )
-            await self.channel.send(cntdwn_str, embed=embed)
-        else:
-            await self.channel.send(cntdwn_str)
 
-        if not next_issue_message:
-            return
+        embed = discord.Embed(
+            title=next_issue.title,
+            description=html_to_md(next_issue.text),
+            colour=self.issue_open_colour,
+            )
+        await self.channel.send(cntdwn_str, embed=embed)
 
         reaction: discord.Reaction
         for reaction in next_issue_message.reactions:
@@ -273,41 +294,24 @@ class IssueAnswerer(object):
         msg_str = f'There are no votes yet <@{self.owner_id}>!'
         await self.channel.send(msg_str)
 
-    async def verify_remaining_issues(self, remaining_issues):
-        for issue in remaining_issues:
-            message: discord.Message = await self._get_issue_post(issue)
-            if not message:
-                continue
+    def verify_issue_message(self, message: discord.Message, issue: aionationstates.Issue):
+        required_reactions = set()
+        options = [Dismiss(issue)] + issue.options
+        max_option_id = max(option._id for option in issue.options)
+        if max_option_id > 12:
+            raise ValueError(f'Issue has a {max_option_id}th option which has no emoji set.')
 
-            required_reactions = set()
-            options = [Dismiss(issue)] + issue.options
-            max_option_id = max(option._id for option in issue.options)
-            if max_option_id > 12:
-                raise ValueError(f'Issue has a {max_option_id}th option which has no emoji set.')
-            for option in options:
-                if max_option_id > 10:
-                    emoji = EMOJIS_EXT[option._id + 1]
-                else:
-                    emoji = EMOJIS[option._id + 1]
-                required_reactions.add(emoji)
+        for option in options:
+            if max_option_id > 10:
+                emoji = EMOJIS_EXT[option._id + 1]
+            else:
+                emoji = EMOJIS[option._id + 1]
+            required_reactions.add(emoji)
 
-            stated_reactions = set(reaction.emoji for reaction in message.reactions if reaction.me)
+        stated_reactions = set(reaction.emoji for reaction in message.reactions if reaction.me)
 
-            if required_reactions != stated_reactions:
-                logger.info(f'Issue #{issue.id} options have changed, post will be deleted and replaced.')
-                await message.delete()
-                await self.channel.send(f'Issue #{issue.id} is being replaced, all previous votes are discarded.')
-
-    async def _get_issue_post(self, issue: aionationstates.Issue):
-        message: discord.Message
-        async for message in self.channel.history(limit=50):
-            if message.author != self.channel.guild.me:
-                continue
-            if not message.content.startswith('Issue #'):
-                continue
-            if message.content == f'Issue #{issue.id}:':
-                return message
-        return None
+        has_correct_options = required_reactions == stated_reactions
+        return has_correct_options
 
     async def issue_cycle_loop(self):
         while True:
@@ -414,7 +418,13 @@ def teardown():
 
 # Public interface:
 
-def instantiate(nation, channel, owner_id, *, issues_per_day=4, first_issue_offset=0):
+def instantiate(
+        nation: aionationstates.NationControl,
+        channel: discord.TextChannel,
+        owner_id: int, *,
+        issues_per_day=4,
+        first_issue_offset=0,
+        ):
     """Create a new issue-answering job.
 
         Parameters
@@ -442,6 +452,7 @@ def instantiate(nation, channel, owner_id, *, issues_per_day=4, first_issue_offs
         between_issues=between_issues,
         owner_id=owner_id,
         nation=nation,
-        channel=channel)
+        channel=channel,
+        )
 
     _jobs.append(issue_answerer)
