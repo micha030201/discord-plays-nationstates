@@ -73,7 +73,14 @@ class IssueAnswerer(object):
     issue_result_colour = discord.Colour(0xde3831)
     banner_colour = discord.Colour(0x36393e)
 
-    def __init__(self, first_issue_offset, between_issues, nation, channel, owner_id):
+    def __init__(
+            self,
+            first_issue_offset: datetime.timedelta,
+            between_issues: datetime.timedelta,
+            nation: aionationstates.NationControl,
+            channel: discord.TextChannel,
+            owner_id: int,
+            ):
         self.first_issue_offset = first_issue_offset
         self.between_issues = between_issues
         self.owner_id = owner_id
@@ -260,7 +267,6 @@ class IssueAnswerer(object):
                     await message.unpin()
                 await self.close_issue(message_issue, winning_option)
             elif next_issue is None:
-                await message.pin()
                 next_issue_message = message
                 next_issue = message_issue
             remaining_issues = [issue for issue in remaining_issues if issue.id != message_issue.id]
@@ -278,12 +284,7 @@ class IssueAnswerer(object):
         wait_until_next_issue = self.get_wait_until_next_issue()
         cntdwn_str = countdown_str(wait_until_next_issue)
 
-        embed = discord.Embed(
-            title=next_issue.title,
-            description=html_to_md(next_issue.text),
-            colour=self.issue_open_colour,
-            )
-        await self.channel.send(cntdwn_str, embed=embed)
+        await self.channel.send(cntdwn_str, reference=next_issue_message, mention_author=False)
 
         reaction: discord.Reaction
         for reaction in next_issue_message.reactions:
