@@ -210,10 +210,9 @@ class IssueAnswerer(object):
                 owner_picks.append(react_option)
             tied_options.append(react_option)
 
-        if not owner_picks:
-            return random.choice(tied_options)
-
-        return random.choice(owner_picks)
+        if owner_picks:
+            return random.choice(owner_picks)
+        return random.choice(tied_options)
 
     def get_wait_until_next_issue(self):
         utc_now = datetime.datetime.utcnow()
