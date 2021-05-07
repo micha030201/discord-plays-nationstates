@@ -9,7 +9,7 @@ Installation
 .. code-block::
 
    pip install discord-plays-nationstates
-   pip install -U git+https://github.com/Rapptz/discord.py@rewrite#egg=discord.py
+   pip install -U git+https://github.com/Rapptz/discord.py#egg=discord.py
    discord-plays-nationstates \
       --token YOUR_DISCORD_API_TOKEN \
       --useragent YOUR_NATIONSTATES_USERAGENT \
@@ -22,12 +22,14 @@ Usage
 
 .. code-block::
 
-   usage: discord-plays-nationstates [-h] --token TOKEN --useragent USERAGENT
-                                     --nation NATION --password PASSWORD
-                                     --channel CHANNEL
+  usage: run.py [-h] --token TOKEN --useragent USERAGENT --nation NATION
+                --password PASSWORD --channel CHANNEL [--issues {1,2,3,4}]
+                [--offset OFFSET]
 
    optional arguments:
      -h, --help            show this help message and exit
+     --issues {1,2,3,4}    Number of issues to request per day.
+     --offset OFFSET       Hours after midnight to post first issue of the day.
 
    required arguments:
      --token TOKEN         The token for your Discord bot
@@ -36,6 +38,12 @@ Usage
      --nation NATION       Name of the nation you want to answer issues of
      --password PASSWORD   Password to the nation
      --channel CHANNEL     ID of the Discord channel to use
+
+.. code-block::
+
+  >> python discord-plays-nationstates
+
+  this command now reads ini file for all arguments and is preferred
 
 
 Dependencies

@@ -1,13 +1,16 @@
-import random
+# Standard
 import asyncio
+import collections
+import datetime
 import logging
-from datetime import datetime, timedelta
-from operator import itemgetter
-from itertools import islice
+import operator
+import random
+import itertools
 
+# External
 import aionationstates
 import discord
-from discord.ext import commands
+import discord.ext.commands as discord_cmds
 
 
 logger = logging.getLogger('discord-plays-nationstates')
@@ -24,42 +27,33 @@ def html_to_md(html):
         .replace('<i>', '*')
         .replace('</i>', '*')
         .replace('&quot;', '"')
-    )
+        )
 
 
-number_to_emoji = {
-    0: '1⃣',
-    1: '2⃣',
-    2: '3⃣',
-    3: '4⃣',
-    4: '5⃣',
-    5: '6⃣',
-    6: '7⃣',
-    7: '8⃣',
-    8: '9⃣',
-    9: '🔟'
-}
-emoji_to_number = dict(reversed(i) for i in number_to_emoji.items())
+EMOJIS = ('0⃣', '1⃣', '2⃣', '3⃣', '4⃣', '5⃣', '6⃣', '7⃣', '8⃣', '9⃣', '🔟')
+EMOJIS_EXT = ('♈', '♉', '♊', '♋', '♌', '♍', '♎', '♏', '♐', '♑', '♒', '♓', '⛎')
+
+
+def text_fragments(text: str, sep='. ', limit=1024):
+    fragment: str
+    fragment_list = []
+    for fragment in text.split(sep):
+        if fragment_list and len(sep.join(fragment_list + [fragment])) > limit:
+            yield sep.join(fragment_list)
+            fragment_list = [fragment]
+        else:
+            fragment_list.append(fragment)
+    yield sep.join(fragment_list)
 
 
 def census_difference(census_change):
-    mapping = (
-        sorted(
-            islice(
-                sorted(
-                    (
-                        (scale.info.title, scale.pchange)
-                        for scale in census_change
-                    ),
-                    key=lambda x: abs(x[1]),
-                    reverse=True
-                ),
-                11
-            ),
-            key=itemgetter(1),
-            reverse=True
-        )
-    )
+    scale: aionationstates.CensusScaleChange
+    results = (
+        (scale.info.title, scale.pchange)
+        for scale in census_change)
+    results_sorted = sorted(results, key=lambda x: abs(x[1]), reverse=True)
+    sliced = itertools.islice(results_sorted, 11)
+    mapping = sorted(sliced, key=operator.itemgetter(1), reverse=True)
     for title, percentage in mapping:
         highlight = arrow = ' '
         if percentage > 0:
@@ -74,217 +68,327 @@ def census_difference(census_change):
 
 # Bot class:
 
-class IssueAnswerer:
-    def __init__(self, **kwargs):
-        for name, value in kwargs.items():
-            setattr(self, name, value)
+class IssueAnswerer(object):
+    issue_open_colour = discord.Colour(0xfdc82f)
+    issue_result_colour = discord.Colour(0xde3831)
+    banner_colour = discord.Colour(0x36393e)
 
-        self.task = asyncio.get_event_loop().create_task(
-            self.issue_cycle_loop())
+    def __init__(
+            self,
+            between_issues: datetime.timedelta,
+            first_issue_offset: datetime.time,
+            nation: aionationstates.NationControl,
+            channel: discord.TextChannel,
+            owner_id: int,
+            ):
+        self.between_issues = between_issues
+        self.first_issue_offset = first_issue_offset
+        self.owner_id = owner_id
+        self.channel = channel
+        self.nation = nation
+
+        my_task = self.issue_cycle_loop()
+        self.task = asyncio.get_event_loop().create_task(my_task)
 
     async def info(self):
         return await self.nation.description()
 
-    async def close_issue(self, issue, option):
-        issue_result = await option.accept()
-        embed = discord.Embed(
-            title=issue.title,
-            description=html_to_md(issue.text),
-            colour=discord.Colour(0xde3831),
-        )
+    def countdown(self):
+        wait_until_next_issue = self.get_wait_until_next_issue()
+        return countdown_str(wait_until_next_issue)
+
+    async def close_issue(self, issue: aionationstates.Issue, option: aionationstates.IssueOption):
+        issue_result: aionationstates.IssueResult = await option.accept()
+        md_text = html_to_md(issue.text)
+        embed = discord.Embed(title=issue.title, description=md_text, colour=self.issue_result_colour)
 
         # Selected option:
-        embed.add_field(
-            name=':white_check_mark::',
-            inline=False,
-            value=html_to_md(option.text)
-        )
+        name = ':white_check_mark::'
+        md_text = html_to_md(option.text)
+        fragment_gen = text_fragments(md_text)
+        for index, partial_text in enumerate(fragment_gen, start=1):
+            embed.add_field(name=name, value=partial_text, inline=False)
+            name = ':white_check_mark::-%d' % index
 
         # Effect line + reclassifications:
-        effect = issue_result.effect_line
-        # str.capitalize() lowercases the rest of the string.
-        effect = f'{effect[0].upper()}{effect[1:]}.'
+        effect_line = issue_result.effect_line or 'issue was dismissed'
+        effect = f'{effect_line.capitalize()}.'
         if issue_result.reclassifications:
             reclassifications = ";\n".join(issue_result.reclassifications)
             effect += f'\n\n{reclassifications}.'
-        effect = html_to_md(effect)
-        embed.add_field(
-            name=':pencil::',
-            inline=False,
-            value=effect
-        )
+        embed.add_field(name=':pencil::', inline=False, value=html_to_md(effect))
 
         # Headlines
         if issue_result.headlines:
-            embed.add_field(
-                name=':newspaper::',
-                inline=False,
-                value=(
-                    ';\n'.join((
-                        html_to_md(headline)
-                        for headline in issue_result.headlines))
-                    + '.'
-                )
-            )
+            text = ';\n'.join(html_to_md(headline) for headline in issue_result.headlines) + '.'
+            embed.add_field(name=':newspaper::', inline=False,value=text)
 
         # Census:
         if issue_result.census:
-            embed.add_field(
-                name=':chart_with_upwards_trend::',
-                inline=False,
-                value=(
-                    '```diff\n'
-                    + '\n'.join(census_difference(issue_result.census))
-                    + '\n```'
-                )
-            )
+            text = '```diff\n' + '\n'.join(census_difference(issue_result.census)) + '\n```'
+            embed.add_field(name=':chart_with_upwards_trend::', inline=False, value=text)
 
         await self.channel.send('Legislation Passed:', embed=embed)
 
         # Banners:
         async def post_banner(banner):
-            embed = discord.Embed(
-                title=banner.name,
-                description=banner.validity,
-                colour=discord.Colour(0x36393e),
-            )
+            embed = discord.Embed(title=banner.name, description=banner.validity, colour=self.banner_colour)
             embed.set_image(url=banner.url)
             await self.channel.send('New banner unlocked:', embed=embed)
 
         # Policies:
         def policy_embed(policy):
-            embed = discord.Embed(
-                title=policy.name,
-                description=policy.description,
-                colour=discord.Colour(0x36393e),
-            )
+            embed = discord.Embed(title=policy.name, description=policy.description, colour=self.banner_colour)
             embed.set_image(url=policy.banner)
             return embed
 
         async def post_new_policy(policy):
-            await self.channel.send('New policy introduced:',
-                                    embed=policy_embed(policy))
+            await self.channel.send('New policy introduced:', embed=policy_embed(policy))
 
         async def post_removed_policy(policy):
-            await self.channel.send('Removed policy:',
-                                    embed=policy_embed(policy))
+            await self.channel.send('Removed policy:', embed=policy_embed(policy))
 
         await asyncio.gather(
             *map(post_banner, issue_result.banners),
             *map(post_new_policy, issue_result.new_policies),
-            *map(post_removed_policy, issue_result.removed_policies)
-        )
-
-    async def open_issue(self, issue):
-        embed = discord.Embed(
-            title=issue.title,
-            description=html_to_md(issue.text),
-            colour=discord.Colour(0xfdc82f),
-            timestamp=datetime.utcnow()
-        )
-
-        if issue.banners:
-            embed.set_image(url=issue.banners[0])
-
-        embed.set_thumbnail(url=self.nation_flag)
-
-        for i, option in enumerate(issue.options):
-            embed.add_field(
-                name=number_to_emoji[i] + ':',
-                value=html_to_md(option.text)
+            *map(post_removed_policy, issue_result.removed_policies),
             )
 
+    async def open_issue(self, issue: aionationstates.Issue):
+        md_text = html_to_md(issue.text)
+        utcnow = datetime.datetime.utcnow()
+        embed = discord.Embed(title=issue.title, description=md_text, colour=self.issue_open_colour, timestamp=utcnow)
+
+        if issue.banners:
+            banner_url, *extra = issue.banners
+            embed.set_image(url=banner_url)
+
+        nation_flag = await self.nation.flag()
+        embed.set_thumbnail(url=nation_flag)
+
+        reactions = []
+        for option, emoji in self.yield_options_with_emoji(issue):
+            name = emoji + f': {option._id + 1:d}'
+            md_text = html_to_md(option.text)
+            fragment_gen = text_fragments(md_text)
+            for index, partial_text in enumerate(fragment_gen, start=1):
+                embed.add_field(name=name, value=partial_text, inline=False)
+                name = emoji + ':-%d' % index
+            reactions.append(emoji)
+
         message = await self.channel.send(f'Issue #{issue.id}:', embed=embed)
-        for i in range(len(issue.options)):
-            await message.add_reaction(number_to_emoji[i])
+        for emoji in reactions:
+            await message.add_reaction(emoji)
+        return message
 
-    async def vote_results(self, issue):
-        def result(message, issue):
-            for i, (reaction, option) in enumerate(zip(message.reactions,
-                                                       issue.options)):
-                assert reaction.emoji == number_to_emoji[i]
-                yield option, reaction.count
+    async def vote_results(self, message: discord.Message, issue: aionationstates.Issue):
+        option_per_react_id = {}
+        reactions_grouped_by_count = collections.defaultdict(list)
+        reaction: discord.Reaction
+        debug_str = 'Found reaction (%s) with (%d) votes.'
+        options = [Dismiss(issue)] + issue.options
+        for reaction in message.reactions:
+            if not reaction.me:
+                continue
 
-        async for message in self.channel.history(limit=50):
-            if (message.author == self.channel.guild.me and
-                    message.content.startswith('Issue #')):
-                if message.content == f'Issue #{issue.id}:':
-                    return list(result(message, issue))
-                else:
-                    logger.error(
-                        "Previous issue in channel doesn't match oldest "
-                        "issue of nation, discarding."
-                    )
-                    break
+            assert options, 'Too many reactions for the set of options.'
+            logger.debug(debug_str, reaction.emoji, reaction.count)
+            reactions_grouped_by_count[reaction.count].append(reaction)
+            option_per_react_id[id(reaction)], *options = options
 
-        raise LookupError
+        assert not options, 'One or more options lack a reaction.'
+        max_count = max(reactions_grouped_by_count)
+        results = reactions_grouped_by_count[max_count]
 
-    def wait_until_next_issue(self):
-        this_midnight = datetime.utcnow().replace(
-            hour=0, minute=0, second=0, microsecond=0)
-        since_first_issue_today = (datetime.utcnow()
-                                   - this_midnight
-                                   + self.first_issue_offset)
+        owner_picks = []
+        tied_options = []
+        for reaction in results:
+            react_option = option_per_react_id[id(reaction)]
+            voters = await reaction.users().flatten()
+            voter_set = set(voter.id for voter in voters)
+            if self.owner_id in voter_set:
+                owner_picks.append(react_option)
+            tied_options.append(react_option)
+
+        if owner_picks:
+            return random.choice(owner_picks)
+        return random.choice(tied_options)
+
+    def get_wait_until_next_issue(self):
+        utc_now = datetime.datetime.utcnow()
+        first_issue_today = datetime.datetime.combine(utc_now.date(), self.first_issue_offset)
+        since_first_issue_today = utc_now - first_issue_today
         since_last_issue = since_first_issue_today % self.between_issues
         until_next_issue = self.between_issues - since_last_issue
-        return asyncio.sleep(until_next_issue.total_seconds())
+        return until_next_issue.total_seconds()
 
     async def issue_cycle(self):
-        self.nation_flag, issues = await (
-            self.nation.flag() + self.nation.issues())
+        remaining_issues = await self.nation.issues()
+        if not remaining_issues:
+            await self.channel.send('Nation has no issues.')
+            return
 
-        issues.reverse()
+        next_issue = None
+        next_issue_message = None
+        issue: aionationstates.Issue
+        lookup_issue_by_msg = {f'Issue #{issue.id}:': issue for issue in remaining_issues}
+        logger.info('begin channel history scan, remaining issues %d', len(remaining_issues))
 
-        try:
-            results = await self.vote_results(issues[0])
-        except LookupError:
-            await self.open_issue(issues[0])
-        else:
-            _, max_votes = max(results, key=itemgetter(1))
-            winning_options = [option for option, votes in results
-                               if votes == max_votes]
-            winning_option = random.choice(winning_options)
+        message: discord.Message
+        channel_guild_me = self.channel.guild.me
+        earliest = datetime.datetime.now() - datetime.timedelta(days=2)
+        async for message in self.channel.history(after=earliest):
+            if message.author != channel_guild_me:
+                continue
 
-            await self.close_issue(issues[0], winning_option)
-            await self.open_issue(issues[1])
+            if message.content not in lookup_issue_by_msg:
+                continue
+
+            message_issue: aionationstates.Issue = lookup_issue_by_msg[message.content]
+            has_correct_options = self.verify_issue_message(message, message_issue)
+            if not has_correct_options:
+                logger.info(message.content + ' options have changed, post will be deleted and replaced.')
+                await message.delete()
+                await self.channel.send(message.content + ' is being replaced, all previous votes are discarded.')
+                continue
+
+            if len(remaining_issues) > 4:
+                winning_option = await self.vote_results(message, message_issue)
+                if message.pinned:
+                    await message.unpin()
+                await self.close_issue(message_issue, winning_option)
+            elif next_issue is None:
+                next_issue_message = message
+                next_issue = message_issue
+            remaining_issues = [issue for issue in remaining_issues if issue.id != message_issue.id]
+            logger.info('Processed %s, remaining issues %d', f'{message.content} {message_issue.title}', len(remaining_issues))
+
+        while remaining_issues:
+            *remaining_issues, current_issue = remaining_issues
+            if next_issue is not None:
+                await self.open_issue(current_issue)
+                continue
+            next_issue = current_issue
+            next_issue_message = await self.open_issue(current_issue)
+            await next_issue_message.pin()
+
+        wait_until_next_issue = self.get_wait_until_next_issue()
+        cntdwn_str = countdown_str(wait_until_next_issue)
+
+        await self.channel.send(cntdwn_str, reference=next_issue_message, mention_author=False)
+
+        reaction: discord.Reaction
+        for reaction in next_issue_message.reactions:
+            if not reaction.me:
+                continue
+            if reaction.count > 1:
+                return
+        msg_str = f'There are no votes yet <@{self.owner_id}>!'
+        await self.channel.send(msg_str)
+
+    @staticmethod
+    def yield_options_with_emoji(issue: aionationstates.Issue):
+        options = [Dismiss(issue)] + issue.options
+        max_option_id = max(option._id for option in issue.options)
+        if max_option_id > 11:
+            raise ValueError(f'Issue has a {max_option_id}th option which has no emoji set.')
+        for option in options:
+            if max_option_id > 9:
+                emoji = EMOJIS_EXT[option._id + 1]
+            else:
+                emoji = EMOJIS[option._id + 1]
+            yield option, emoji
+
+    def verify_issue_message(self, message: discord.Message, issue: aionationstates.Issue):
+        options_with_emoji = self.yield_options_with_emoji(issue)
+        required_reactions = set(emoji for option, emoji in options_with_emoji)
+        stated_reactions = set(reaction.emoji for reaction in message.reactions if reaction.me)
+
+        has_correct_options = required_reactions == stated_reactions
+        return has_correct_options
 
     async def issue_cycle_loop(self):
         while True:
-            await self.wait_until_next_issue()
+            wait_until_next_issue = self.get_wait_until_next_issue()
+            await asyncio.sleep(wait_until_next_issue)
             try:
                 await self.issue_cycle()
             except Exception:
                 logger.exception('Error while cycling issues:')
+                await self.channel.send(f'Issue cycle error. Pls fix <@{self.owner_id}>')
+
+
+def countdown_str(until_next_issue):
+    hours = int(until_next_issue // 3600)
+    minutes = int(until_next_issue % 3600 // 60)
+    seconds = int(until_next_issue % 60)
+    cntdwn_str = (
+        f'Issue cycle will sleep {hours} hours, {minutes} '
+        f'minutes, and {seconds} seconds until next issue.')
+    return cntdwn_str
+
+
+class Dismiss(aionationstates.IssueOption):
+    ''' Option to dismiss issue. '''
+
+    def __init__(self, issue):
+        self._issue = issue
+        self._id = -1
+        self.text = aionationstates.utils.unscramble_encoding('Dismiss issue.')
 
 
 # Commands:
 
-@commands.command()
+@discord_cmds.command()
 async def issues(ctx, nation: aionationstates.Nation = None):
     """What's this?"""
-    nations_to_jobs = {job.nation: job
-                       for job in _jobs
-                       if job.channel in ctx.guild.channels}
+    nations_to_jobs = {job.nation: job for job in _jobs if job.channel in ctx.guild.channels}
 
-    try:
+    if nation in nations_to_jobs:
         jobs = (nations_to_jobs[nation],)
-    except KeyError:
+    else:
         jobs = nations_to_jobs.values()
 
     messages = await asyncio.gather(*[job.info() for job in jobs])
     await asyncio.gather(*map(ctx.send, messages))
 
 
-@commands.command(hidden=True)
-@commands.is_owner()
+@discord_cmds.command()
+async def countdown(ctx, nation: aionationstates.Nation = None):
+    """Report time to next auto cycle."""
+    nations_to_jobs = {job.nation: job for job in _jobs if job.channel in ctx.guild.channels}
+
+    if nation in nations_to_jobs:
+        jobs = (nations_to_jobs[nation],)
+    else:
+        jobs = nations_to_jobs.values()
+
+    messages = [job.countdown() for job in jobs]
+    await asyncio.gather(*map(ctx.send, messages))
+
+
+@discord_cmds.command(hidden=True)
+@discord_cmds.is_owner()
 async def scroll(ctx, nation: aionationstates.Nation = None):
     """Switch the issues manually."""
     nations_to_jobs = {job.nation: job for job in _jobs}
 
-    if nation is None and len(nations_to_jobs) == 1:
-        await nations_to_jobs.popitem()[1].issue_cycle()
+    if nation is not None:
+        job = nations_to_jobs[nation]
+    elif len(_jobs) == 1:
+        job = _jobs[0]
     else:
-        await nations_to_jobs[nation].issue_cycle()
+        logger.error('Scroll failed, nation not specified and found %d jobs.', len(_jobs))
+        return
+    await job.issue_cycle()
+
+
+@discord_cmds.command(hidden=True)
+@discord_cmds.is_owner()
+async def shutdown(ctx: discord_cmds.Context, nation: aionationstates.Nation = None):
+    teardown()
+    bot: discord_cmds.Bot = ctx.bot
+    await bot.close()
 
 
 # Loading & unloading:
@@ -295,7 +399,9 @@ _jobs = []
 # called by discord.py on bot.load_extension()
 def setup(bot):
     bot.add_command(issues)
+    bot.add_command(countdown)
     bot.add_command(scroll)
+    bot.add_command(shutdown)
 
 
 # called by discord.py on bot.unload_extension()
@@ -306,33 +412,41 @@ def teardown():
 
 # Public interface:
 
-def instantiate(nation, channel, *, issues_per_day=4,
-                first_issue_offset=timedelta(0)):
+def instantiate(
+        nation: aionationstates.NationControl,
+        channel: discord.TextChannel,
+        owner_id: int, *,
+        issues_per_day=4,
+        first_issue_offset=0,
+        ):
     """Create a new issue-answering job.
 
-    Parameters
-    ----------
-    nation : :class:`aionationstates.NationControl`
-        The nation you want to post issues of.
-    channel : :class:`discord.Channel`
-        The channel you want the bot to post issues in.
-    issues_per_day : int
-        How many issues to post per day.
-    first_issue_offset : :class:`datetime.timedelta`
-        How soon after UTC midnight to post the first issue of the day.
-    """
-    if type(issues_per_day) is not int or not 1 <= issues_per_day <= 4:
-        raise ValueError('issues_per_day must be an'
-                         ' integer between 1 and 4')
-    between_issues = timedelta(days=1) / issues_per_day
+        Parameters
+        ----------
+        nation : :class:`aionationstates.NationControl`
+            The nation you want to post issues of.
+        channel : :class:`discord.Channel`
+            The channel you want the bot to post issues in.
+        owner_id : int
+            discord app owner identification integer
+        issues_per_day : int
+            How many issues to post per day.
+        first_issue_offset : int
+            How soon after UTC midnight to post the first issue of the day.
+        """
+    between_issues = datetime.timedelta(hours=24 / issues_per_day)
 
-    if first_issue_offset >= between_issues:
-        raise ValueError('first_issue_offset must not exceed the'
-                         ' time between issues')
-
-    _jobs.append(IssueAnswerer(
+    assert first_issue_offset >= 0, (
+        'first_issue_offset must be an integer greater than or equal to zero')
+    assert first_issue_offset * issues_per_day <= 24, (
+        'first_issue_offset must not exceed the time between issues')
+    first_issue_offset = datetime.time(hour=first_issue_offset)
+    issue_answerer = IssueAnswerer(
         between_issues=between_issues,
         first_issue_offset=first_issue_offset,
+        owner_id=owner_id,
         nation=nation,
         channel=channel,
-    ))
+        )
+
+    _jobs.append(issue_answerer)
