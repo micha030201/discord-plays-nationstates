@@ -167,16 +167,8 @@ class IssueAnswerer(object):
         embed.set_thumbnail(url=nation_flag)
 
         reactions = []
-        options = [Dismiss(issue)] + issue.options
-        max_option_id = max(option._id for option in issue.options)
-        if max_option_id > 12:
-            raise ValueError(f'Issue has a {max_option_id}th option which has no emoji set.')
-        for option in options:
-            if max_option_id > 10:
-                emoji = EMOJIS_EXT[option._id + 1]
-            else:
-                emoji = EMOJIS[option._id + 1]
-            name = emoji + ':'
+        for option, emoji in self.yield_options_with_emoji(issue):
+            name = emoji + f': {option._id + 1:d}'
             md_text = html_to_md(option.text)
             fragment_gen = text_fragments(md_text)
             for index, partial_text in enumerate(fragment_gen, start=1):
@@ -295,20 +287,22 @@ class IssueAnswerer(object):
         msg_str = f'There are no votes yet <@{self.owner_id}>!'
         await self.channel.send(msg_str)
 
-    def verify_issue_message(self, message: discord.Message, issue: aionationstates.Issue):
-        required_reactions = set()
+    @staticmethod
+    def yield_options_with_emoji(issue: aionationstates.Issue):
         options = [Dismiss(issue)] + issue.options
         max_option_id = max(option._id for option in issue.options)
-        if max_option_id > 12:
+        if max_option_id > 11:
             raise ValueError(f'Issue has a {max_option_id}th option which has no emoji set.')
-
         for option in options:
-            if max_option_id > 10:
+            if max_option_id > 9:
                 emoji = EMOJIS_EXT[option._id + 1]
             else:
                 emoji = EMOJIS[option._id + 1]
-            required_reactions.add(emoji)
+            yield option, emoji
 
+    def verify_issue_message(self, message: discord.Message, issue: aionationstates.Issue):
+        options_with_emoji = self.yield_options_with_emoji(issue)
+        required_reactions = set(emoji for option, emoji in options_with_emoji)
         stated_reactions = set(reaction.emoji for reaction in message.reactions if reaction.me)
 
         has_correct_options = required_reactions == stated_reactions
