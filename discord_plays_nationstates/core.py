@@ -434,13 +434,15 @@ def instantiate(
         first_issue_offset : int
             How soon after UTC midnight to post the first issue of the day.
         """
-    between_issues = datetime.timedelta(hours=24 / issues_per_day)
+    assert first_issue_offset >= 0, 'first_issue_offset must be greater than or equal to zero'
+    assert issues_per_day in (1, 2, 3, 4), 'issues_per_day must be between one and four inclusive'
+    assert first_issue_offset * issues_per_day <= 24, 'first_issue_offset must not exceed the time between issues'
 
-    assert first_issue_offset >= 0, (
-        'first_issue_offset must be an integer greater than or equal to zero')
-    assert first_issue_offset * issues_per_day <= 24, (
-        'first_issue_offset must not exceed the time between issues')
-    first_issue_offset = datetime.time(hour=first_issue_offset)
+    between_issues = datetime.timedelta(hours=24 / issues_per_day)
+    initial_offset = datetime.timedelta(hours=first_issue_offset)
+    min_start: datetime.datetime = datetime.datetime.min + initial_offset
+    first_issue_offset = min_start.time()
+
     issue_answerer = IssueAnswerer(
         between_issues=between_issues,
         first_issue_offset=first_issue_offset,
