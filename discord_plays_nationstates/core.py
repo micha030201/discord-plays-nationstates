@@ -75,14 +75,14 @@ class IssueAnswerer(object):
 
     def __init__(
             self,
-            first_issue_offset: datetime.timedelta,
             between_issues: datetime.timedelta,
+            first_issue_offset: datetime.time,
             nation: aionationstates.NationControl,
             channel: discord.TextChannel,
             owner_id: int,
             ):
-        self.first_issue_offset = first_issue_offset
         self.between_issues = between_issues
+        self.first_issue_offset = first_issue_offset
         self.owner_id = owner_id
         self.channel = channel
         self.nation = nation
@@ -225,8 +225,8 @@ class IssueAnswerer(object):
 
     def get_wait_until_next_issue(self):
         utc_now = datetime.datetime.utcnow()
-        last_midnight = utc_now.replace(hour=0, minute=0, second=0, microsecond=0)
-        since_first_issue_today = utc_now - (last_midnight + self.first_issue_offset)
+        first_issue_today = datetime.datetime.combine(utc_now.date(), self.first_issue_offset)
+        since_first_issue_today = utc_now - first_issue_today
         since_last_issue = since_first_issue_today % self.between_issues
         until_next_issue = self.between_issues - since_last_issue
         return until_next_issue.total_seconds()
@@ -447,10 +447,10 @@ def instantiate(
         'first_issue_offset must be an integer greater than or equal to zero')
     assert first_issue_offset * issues_per_day <= 24, (
         'first_issue_offset must not exceed the time between issues')
-    fio_td = datetime.timedelta(hours=first_issue_offset)
+    first_issue_offset = datetime.time(hour=first_issue_offset)
     issue_answerer = IssueAnswerer(
-        first_issue_offset=fio_td,
         between_issues=between_issues,
+        first_issue_offset=first_issue_offset,
         owner_id=owner_id,
         nation=nation,
         channel=channel,
