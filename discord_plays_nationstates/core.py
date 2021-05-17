@@ -251,8 +251,11 @@ class IssueAnswerer(object):
                 continue
 
             message_issue: aionationstates.Issue = lookup_issue_by_msg[message.content]
-            has_correct_options = self.verify_issue_message(message, message_issue)
-            if not has_correct_options:
+            options_with_emoji = self.yield_options_with_emoji(issue)
+            required_reactions = set(emoji for option, emoji in options_with_emoji)
+            stated_reactions = set(reaction.emoji for reaction in message.reactions if reaction.me)
+
+            if required_reactions != stated_reactions:
                 logger.info(message.content + ' options have changed, post will be deleted and replaced.')
                 await message.delete()
                 await self.channel.send(message.content + ' is being replaced, all previous votes are discarded.')
@@ -303,14 +306,6 @@ class IssueAnswerer(object):
             else:
                 emoji = EMOJIS[option._id + 1]
             yield option, emoji
-
-    def verify_issue_message(self, message: discord.Message, issue: aionationstates.Issue):
-        options_with_emoji = self.yield_options_with_emoji(issue)
-        required_reactions = set(emoji for option, emoji in options_with_emoji)
-        stated_reactions = set(reaction.emoji for reaction in message.reactions if reaction.me)
-
-        has_correct_options = required_reactions == stated_reactions
-        return has_correct_options
 
     async def issue_cycle_loop(self):
         while True:
