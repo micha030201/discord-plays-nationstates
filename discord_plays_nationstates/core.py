@@ -90,7 +90,7 @@ class IssueAnswerer(object):
         my_task = self.issue_cycle_loop()
         self.task = asyncio.get_event_loop().create_task(my_task)
 
-    async def info(self):
+    async def description(self):
         return await self.nation.description()
 
     def get_countdown_str(self):
@@ -337,6 +337,7 @@ class Dismiss(aionationstates.IssueOption):
 @discord_cmds.command()
 async def issues(ctx, nation: aionationstates.Nation = None):
     """What's this?"""
+    job: IssueAnswerer
     nations_to_jobs = {job.nation: job for job in _jobs if job.channel in ctx.guild.channels}
 
     if nation in nations_to_jobs:
@@ -344,7 +345,7 @@ async def issues(ctx, nation: aionationstates.Nation = None):
     else:
         jobs = nations_to_jobs.values()
 
-    messages = await asyncio.gather(*[job.info() for job in jobs])
+    messages = await asyncio.gather(*[job.description() for job in jobs])
     await asyncio.gather(*map(ctx.send, messages))
 
 
