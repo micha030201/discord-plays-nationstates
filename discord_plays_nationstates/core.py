@@ -95,7 +95,13 @@ class IssueAnswerer(object):
 
     def get_countdown_str(self):
         wait_until_next_issue = self.get_wait_until_next_issue()
-        return countdown_str(wait_until_next_issue)
+        hours = int(wait_until_next_issue // 3600)
+        minutes = int(wait_until_next_issue % 3600 // 60)
+        seconds = int(wait_until_next_issue % 60)
+        cntdwn_str = (
+            f'Issue cycle will sleep {hours} hours, {minutes} '
+            f'minutes, and {seconds} seconds until next issue.')
+        return cntdwn_str
 
     async def close_issue(self, issue: aionationstates.Issue, option: aionationstates.IssueOption):
         issue_result: aionationstates.IssueResult = await option.accept()
@@ -315,16 +321,6 @@ class IssueAnswerer(object):
             except Exception:
                 logger.exception('Error while cycling issues:')
                 await self.channel.send(f'Issue cycle error. Pls fix <@{self.owner_id}>')
-
-
-def countdown_str(until_next_issue):
-    hours = int(until_next_issue // 3600)
-    minutes = int(until_next_issue % 3600 // 60)
-    seconds = int(until_next_issue % 60)
-    cntdwn_str = (
-        f'Issue cycle will sleep {hours} hours, {minutes} '
-        f'minutes, and {seconds} seconds until next issue.')
-    return cntdwn_str
 
 
 class Dismiss(aionationstates.IssueOption):
