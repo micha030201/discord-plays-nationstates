@@ -98,10 +98,10 @@ class IssueAnswerer(object):
         hours = int(wait_until_next_issue // 3600)
         minutes = int(wait_until_next_issue % 3600 // 60)
         seconds = int(wait_until_next_issue % 60)
-        cntdwn_str = (
+        countdown_str = (
             f'Issue cycle will sleep {hours} hours, {minutes} '
             f'minutes, and {seconds} seconds until next issue.')
-        return cntdwn_str
+        return countdown_str
 
     async def close_issue(self, issue: aionationstates.Issue, option: aionationstates.IssueOption):
         issue_result: aionationstates.IssueResult = await option.accept()
@@ -278,9 +278,9 @@ class IssueAnswerer(object):
             next_issue_message = await self.open_issue(current_issue)
             await next_issue_message.pin()
 
-        cntdwn_str = self.get_countdown_str()
+        countdown_str = self.get_countdown_str()
 
-        await self.channel.send(cntdwn_str, reference=next_issue_message, mention_author=False)
+        await self.channel.send(countdown_str, reference=next_issue_message, mention_author=False)
 
         reaction: discord.Reaction
         for reaction in next_issue_message.reactions:
