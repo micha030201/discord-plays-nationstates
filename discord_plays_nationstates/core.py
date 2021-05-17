@@ -383,7 +383,8 @@ async def scroll(ctx, nation: aionationstates.Nation = None):
 @discord_cmds.command(hidden=True)
 @discord_cmds.is_owner()
 async def shutdown(ctx: discord_cmds.Context, nation: aionationstates.Nation = None):
-    teardown()
+    for job in _jobs:
+        job.task.cancel()
     bot: discord_cmds.Bot = ctx.bot
     await bot.close()
 
@@ -399,12 +400,6 @@ def setup(bot):
     bot.add_command(countdown)
     bot.add_command(scroll)
     bot.add_command(shutdown)
-
-
-# called by discord.py on bot.unload_extension()
-def teardown():
-    for job in _jobs:
-        job.task.cancel()
 
 
 # Public interface:
