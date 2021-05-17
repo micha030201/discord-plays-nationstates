@@ -90,8 +90,8 @@ class IssueAnswerer(object):
         my_task = self.issue_cycle_loop()
         self.task = asyncio.get_event_loop().create_task(my_task)
 
-    async def description(self):
-        return await self.nation.description()
+    def description(self):
+        return self.nation.description()
 
     def get_countdown_str(self):
         wait_until_next_issue = self.get_wait_until_next_issue()
