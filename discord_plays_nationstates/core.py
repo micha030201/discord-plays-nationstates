@@ -93,7 +93,7 @@ class IssueAnswerer(object):
     async def info(self):
         return await self.nation.description()
 
-    def countdown(self):
+    def get_countdown_str(self):
         wait_until_next_issue = self.get_wait_until_next_issue()
         return countdown_str(wait_until_next_issue)
 
@@ -272,8 +272,7 @@ class IssueAnswerer(object):
             next_issue_message = await self.open_issue(current_issue)
             await next_issue_message.pin()
 
-        wait_until_next_issue = self.get_wait_until_next_issue()
-        cntdwn_str = countdown_str(wait_until_next_issue)
+        cntdwn_str = self.get_countdown_str()
 
         await self.channel.send(cntdwn_str, reference=next_issue_message, mention_author=False)
 
@@ -356,6 +355,7 @@ async def issues(ctx, nation: aionationstates.Nation = None):
 @discord_cmds.command()
 async def countdown(ctx, nation: aionationstates.Nation = None):
     """Report time to next auto cycle."""
+    job: IssueAnswerer
     nations_to_jobs = {job.nation: job for job in _jobs if job.channel in ctx.guild.channels}
 
     if nation in nations_to_jobs:
@@ -363,7 +363,7 @@ async def countdown(ctx, nation: aionationstates.Nation = None):
     else:
         jobs = nations_to_jobs.values()
 
-    messages = [job.countdown() for job in jobs]
+    messages = [job.get_countdown_str() for job in jobs]
     await asyncio.gather(*map(ctx.send, messages))
 
 
