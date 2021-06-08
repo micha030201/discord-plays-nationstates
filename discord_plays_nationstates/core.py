@@ -7,12 +7,16 @@ import operator
 import random
 import itertools
 
+# Typing
+from typing import Dict, List, Set
+
 # External
 import aionationstates
 import discord
 import discord.ext.commands as discord_cmds
 
-
+# Global
+OptionList = List[aionationstates.IssueOption]
 logger = logging.getLogger('discord-plays-nationstates')
 
 
@@ -188,11 +192,11 @@ class IssueAnswerer(object):
         return message
 
     async def vote_results(self, message: discord.Message, issue: aionationstates.Issue):
-        option_per_react_id = {}
-        reactions_grouped_by_count = collections.defaultdict(list)
+        option_per_react_id: Dict[int, aionationstates.IssueOption] = {}
+        reactions_grouped_by_count: Dict[int, List[discord.Reaction]] = collections.defaultdict(list)
         reaction: discord.Reaction
         debug_str = 'Found reaction (%s) with (%d) votes.'
-        options = [Dismiss(issue)] + issue.options
+        options: OptionList = [Dismiss(issue)] + issue.options
         for reaction in message.reactions:
             if not reaction.me:
                 continue
@@ -200,14 +204,14 @@ class IssueAnswerer(object):
             assert options, 'Too many reactions for the set of options.'
             logger.debug(debug_str, reaction.emoji, reaction.count)
             reactions_grouped_by_count[reaction.count].append(reaction)
-            option_per_react_id[id(reaction)], *options = options
+            option_per_react_id[id(reaction)] = options.pop(0)
 
         assert not options, 'One or more options lack a reaction.'
-        max_count = max(reactions_grouped_by_count)
-        results = reactions_grouped_by_count[max_count]
+        max_count: int = max(reactions_grouped_by_count)
+        results: List[discord.Reaction] = reactions_grouped_by_count[max_count]
 
-        owner_picks = []
-        tied_options = []
+        owner_picks: OptionList = []
+        tied_options: OptionList = []
         for reaction in results:
             react_option = option_per_react_id[id(reaction)]
             voters = await reaction.users().flatten()
@@ -296,7 +300,7 @@ class IssueAnswerer(object):
 
     @staticmethod
     def yield_options_with_emoji(issue: aionationstates.Issue):
-        options = [Dismiss(issue)] + issue.options
+        options: OptionList = [Dismiss(issue)] + issue.options
         max_option_id = max(option._id for option in issue.options)
         if max_option_id > 11:
             raise ValueError(f'Issue has a {max_option_id}th option which has no emoji set.')
