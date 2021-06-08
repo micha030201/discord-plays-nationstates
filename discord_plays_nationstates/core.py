@@ -255,7 +255,7 @@ class IssueAnswerer(object):
                 continue
 
             message_issue: aionationstates.Issue = lookup_issue_by_msg[message.content]
-            options_with_emoji = self.yield_options_with_emoji(issue)
+            options_with_emoji = self.yield_options_with_emoji(message_issue)
             required_reactions = set(emoji for option, emoji in options_with_emoji)
             stated_reactions = set(reaction.emoji for reaction in message.reactions if reaction.me)
 
