@@ -270,7 +270,10 @@ class IssueAnswerer(object):
                 if message.pinned:
                     await message.unpin()
                 await self.close_issue(message_issue, winning_option)
-            elif next_issue is None:
+                remaining_issues = await self.nation.issues()
+                continue
+
+            if next_issue is None:
                 next_issue_message = message
                 next_issue = message_issue
             remaining_issues = [issue for issue in remaining_issues if issue.id != message_issue.id]
