@@ -383,7 +383,7 @@ async def scroll(ctx, nation: aionationstates.Nation = None):
 @discord_cmds.command(hidden=True)
 @discord_cmds.is_owner()
 async def shutdown(ctx: discord_cmds.Context, nation: aionationstates.Nation = None):
-    ctx.send('Shutting down as requested.')
+    await ctx.send('Shutting down as requested.')
     for job in _jobs:
         job.task.cancel()
     logger.info('All tasks closed.')
