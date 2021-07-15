@@ -164,7 +164,7 @@ class IssueAnswerer(object):
             *map(post_removed_policy, issue_result.removed_policies),
             )
 
-    async def open_issue(self, issue: aionationstates.Issue):
+    async def open_issue(self, issue: aionationstates.Issue, nation_flag: str):
         md_text = html_to_md(issue.text)
         utcnow = datetime.datetime.utcnow()
         embed = discord.Embed(title=issue.title, description=md_text, colour=self.issue_open_colour, timestamp=utcnow)
@@ -173,7 +173,6 @@ class IssueAnswerer(object):
             banner_url, *extra = issue.banners
             embed.set_image(url=banner_url)
 
-        nation_flag = await self.nation.flag()
         embed.set_thumbnail(url=nation_flag)
 
         reactions = []
@@ -279,14 +278,13 @@ class IssueAnswerer(object):
             remaining_issues = [issue for issue in remaining_issues if issue.id != message_issue.id]
             logger.info('Processed %s, remaining issues %d', f'{message.content} {message_issue.title}', len(remaining_issues))
 
+        if remaining_issues:
+            nation_flag = await self.nation.flag()
         while remaining_issues:
             *remaining_issues, current_issue = remaining_issues
-            if next_issue is not None:
-                await self.open_issue(current_issue)
-                continue
-            next_issue = current_issue
-            next_issue_message = await self.open_issue(current_issue)
-            await next_issue_message.pin()
+            issue_message = await self.open_issue(current_issue, nation_flag)
+            if next_issue_message is None:
+                next_issue_message = issue_message
 
         countdown_str = self.get_countdown_str()
 
