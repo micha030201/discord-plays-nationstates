@@ -26,8 +26,10 @@ def html_to_md(html: str):
     return html.replace('*', '\*').replace('<i> ', ' *').replace(' </i>', '* ').replace('&quot;', '"')
 
 
-EMOJIS = ('0⃣', '1⃣', '2⃣', '3⃣', '4⃣', '5⃣', '6⃣', '7⃣', '8⃣', '9⃣', '🔟')
-EMOJIS_EXT = ('♈', '♉', '♊', '♋', '♌', '♍', '♎', '♏', '♐', '♑', '♒', '♓', '⛎')
+EMOJIS = (
+    '0⃣', '1⃣', '2⃣', '3⃣', '4⃣', '5⃣', '6⃣', '7⃣', '8⃣', '9⃣', '🔟',
+    '♈', '♉', '♊', '♋', '♌', '♍', '♎', '♏', '♐', '♑', '♒', '♓', '⛎',
+    )
 
 
 def text_fragments(text: str, sep='. ', limit=1024):
@@ -294,14 +296,8 @@ class IssueAnswerer(object):
     @staticmethod
     def yield_options_with_emoji(issue: aionationstates.Issue):
         options: OptionList = [Dismiss(issue)] + issue.options
-        max_option_id = max(option._id for option in issue.options)
-        if max_option_id > 11:
-            raise ValueError(f'Issue has a {max_option_id}th option which has no emoji set.')
         for option in options:
-            if max_option_id > 9:
-                emoji = EMOJIS_EXT[option._id + 1]
-            else:
-                emoji = EMOJIS[option._id + 1]
+            emoji = EMOJIS[option._id + 1]
             yield option, emoji
 
     async def issue_cycle_loop(self):
