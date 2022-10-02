@@ -323,13 +323,15 @@ class Dismiss(aionationstates.IssueOption):
 @discord_cmds.command()
 async def issues(ctx: discord_cmds.Context, nation: aionationstates.Nation = None):
     """What's this?"""
-    job: IssueAnswerer
-    nations_to_jobs = {job.nation: job for job in _jobs if job.channel in ctx.guild.channels}
-
-    if nation in nations_to_jobs:
-        jobs = (nations_to_jobs[nation],)
-    else:
-        jobs = nations_to_jobs.values()
+    jobs: List[IssueAnswerer] = []
+    for job in _jobs:
+        if job.channel not in ctx.guild.channels:
+            continue
+        if nation is not None and job.nation.id == nation.id:
+            description = await job.description()
+            await ctx.send(description)
+            return
+        jobs.append(job)
 
     messages = await asyncio.gather(*[job.description() for job in jobs])
     await asyncio.gather(*map(ctx.send, messages))
@@ -338,15 +340,16 @@ async def issues(ctx: discord_cmds.Context, nation: aionationstates.Nation = Non
 @discord_cmds.command()
 async def countdown(ctx: discord_cmds.Context, nation: aionationstates.Nation = None):
     """Report time to next auto cycle."""
-    job: IssueAnswerer
-    nations_to_jobs = {job.nation: job for job in _jobs if job.channel in ctx.guild.channels}
+    messages: List[str] = []
+    for job in _jobs:
+        if job.channel not in ctx.guild.channels:
+            continue
+        countdown_str = job.get_countdown_str()
+        if nation is not None and job.nation.id == nation.id:
+            await ctx.send(countdown_str)
+            return
+        messages.append(countdown_str)
 
-    if nation in nations_to_jobs:
-        jobs = (nations_to_jobs[nation],)
-    else:
-        jobs = nations_to_jobs.values()
-
-    messages = [job.get_countdown_str() for job in jobs]
     await asyncio.gather(*map(ctx.send, messages))
 
 
