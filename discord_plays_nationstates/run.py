@@ -12,9 +12,8 @@ import aionationstates
 import discord
 import discord.ext.commands as discord_cmds
 
-logging.config.dictConfig({
+LOGGING_CONFIG = {
     "version": 1,
-    "disable_existing_loggers": False,
     "formatters": {
         "standard": {
             "format": "%(asctime)s [%(levelname)s] %(filename)s: %(message)s"
@@ -22,7 +21,7 @@ logging.config.dictConfig({
         },
     "handlers": {
         "to_console": {
-            "level": "DEBUG",
+            "level": logging.DEBUG,
             "formatter": "standard",
             "class": "logging.StreamHandler"
             }
@@ -30,21 +29,21 @@ logging.config.dictConfig({
     "loggers": {
         "discord": {
             "handlers": ["to_console"],
-            "level": "INFO",
-            "propagate": False
+            "level": logging.WARNING,
+            "propagate": 0
             },
         "aionationstates": {
             "handlers": ["to_console"],
-            "level": "DEBUG",
-            "propagate": False
+            "level": logging.WARNING,
+            "propagate": 0
             },
         "discord-plays-nationstates": {
             "handlers": ["to_console"],
-            "level": "DEBUG",
-            "propagate": False
+            "level": logging.DEBUG,
+            "propagate": 0
             }
         }
-    })
+    }
 logger = logging.getLogger('discord-plays-nationstates')
 bot = discord_cmds.Bot(command_prefix='.')
 
@@ -57,6 +56,7 @@ def main():
     aionationstates.set_user_agent(config['Bot']['useragent'])
 
     bot.load_extension('core')
+    logging.config.dictConfig(LOGGING_CONFIG)
     core = bot.extensions['core']
     config_channel = int(config['GuildNation']['channel'])
     offset = float(config['GuildNation']['utc_start'])
@@ -139,6 +139,7 @@ def _main():
     aionationstates.set_user_agent(args.useragent)
 
     bot.load_extension('core')
+    logging.config.dictConfig(LOGGING_CONFIG)
     core = bot.extensions['core']
 
 
