@@ -45,7 +45,8 @@ LOGGING_CONFIG = {
         }
     }
 logger = logging.getLogger('discord-plays-nationstates')
-bot = discord_cmds.Bot(command_prefix='.')
+intents = discord.Intents(guild_messages=True, guild_reactions=True, guilds=True)
+bot = discord_cmds.Bot(command_prefix='.', intents=intents)
 
 def main():
     import configparser
