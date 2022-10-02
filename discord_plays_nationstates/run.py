@@ -58,16 +58,19 @@ def main():
     bot.load_extension('core')
     logging.config.dictConfig(LOGGING_CONFIG)
     core = bot.extensions['core']
-    config_channel = int(config['GuildNation']['channel'])
-    offset = float(config['GuildNation']['utc_start'])
-    issues = int(config['GuildNation']['daily_issues'])
+
+    config_guild = config['GuildNation']
+    config_channel = config_guild.getint('channel')
+    offset = config_guild.getfloat('utc_start')
+    issues = config_guild.getint('daily_issues')
 
     @bot.event
     @call_once
     async def on_ready():
         channel: Optional[discord.TextChannel] = bot.get_channel(config_channel)
-        assert channel is not None, f'Parsed int {config_channel} did not match channel.'
-        nation = aionationstates.NationControl(config['GuildNation']['nation'], password=config['GuildNation']['password'])
+        if channel is None:
+            raise SystemExit(f'Channel not found for parsed int: {config_channel}.')
+        nation = aionationstates.NationControl(config_guild['nation'], password=config_guild['password'])
         app = await bot.application_info()
         core.instantiate(nation, channel, app.owner.id, issues_per_day=issues, first_issue_offset=offset)
 
