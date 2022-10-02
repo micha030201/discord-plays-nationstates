@@ -1,4 +1,4 @@
-import run
+import run # type: ignore
 
 
 run.main()
