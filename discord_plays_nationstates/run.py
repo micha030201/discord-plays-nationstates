@@ -1,10 +1,15 @@
 # Standard
 import functools
 import traceback
+import logging
 import logging.config
+
+# Typing
+from typing import Optional
 
 # External
 import aionationstates
+import discord
 import discord.ext.commands as discord_cmds
 
 logging.config.dictConfig({
@@ -60,14 +65,14 @@ def main():
     @bot.event
     @call_once
     async def on_ready():
-        channel = bot.get_channel(config_channel)
+        channel: Optional[discord.TextChannel] = bot.get_channel(config_channel)
         assert channel is not None, f'Parsed int {config_channel} did not match channel.'
         nation = aionationstates.NationControl(config['GuildNation']['nation'], password=config['GuildNation']['password'])
         app = await bot.application_info()
         core.instantiate(nation, channel, app.owner.id, issues_per_day=issues, first_issue_offset=offset)
 
     @bot.event
-    async def on_command_error(ctx, error):
+    async def on_command_error(ctx: discord_cmds.Context, error: discord_cmds.CommandError):
         if isinstance(error, discord_cmds.CommandNotFound):
             return
 

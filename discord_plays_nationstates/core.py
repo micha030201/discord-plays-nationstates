@@ -32,7 +32,7 @@ EMOJIS_EXT = ('♈', '♉', '♊', '♋', '♌', '♍', '♎', '♏', '♐', '�
 
 def text_fragments(text: str, sep='. ', limit=1024):
     fragment: str
-    fragment_list = []
+    fragment_list: List[str] = []
     for fragment in text.split(sep):
         if fragment_list and len(sep.join(fragment_list + [fragment])) > limit:
             yield sep.join(fragment_list)
@@ -177,7 +177,7 @@ class IssueAnswerer(object):
                 name = emoji + ':-%d' % index
             reactions.append(emoji)
 
-        message = await self.channel.send(f'Issue #{issue.id}:', embed=embed)
+        message: discord.Message = await self.channel.send(f'Issue #{issue.id}:', embed=embed)
         for emoji in reactions:
             await message.add_reaction(emoji)
         return message
@@ -327,7 +327,7 @@ class Dismiss(aionationstates.IssueOption):
 # Commands:
 
 @discord_cmds.command()
-async def issues(ctx, nation: aionationstates.Nation = None):
+async def issues(ctx: discord_cmds.Context, nation: aionationstates.Nation = None):
     """What's this?"""
     job: IssueAnswerer
     nations_to_jobs = {job.nation: job for job in _jobs if job.channel in ctx.guild.channels}
@@ -342,7 +342,7 @@ async def issues(ctx, nation: aionationstates.Nation = None):
 
 
 @discord_cmds.command()
-async def countdown(ctx, nation: aionationstates.Nation = None):
+async def countdown(ctx: discord_cmds.Context, nation: aionationstates.Nation = None):
     """Report time to next auto cycle."""
     job: IssueAnswerer
     nations_to_jobs = {job.nation: job for job in _jobs if job.channel in ctx.guild.channels}
@@ -358,7 +358,7 @@ async def countdown(ctx, nation: aionationstates.Nation = None):
 
 @discord_cmds.command(hidden=True)
 @discord_cmds.is_owner()
-async def scroll(ctx, nation: aionationstates.Nation = None):
+async def scroll(ctx: discord_cmds.Context, nation: aionationstates.Nation = None):
     """Switch the issues manually."""
     nations_to_jobs = {job.nation: job for job in _jobs}
 
@@ -385,11 +385,11 @@ async def shutdown(ctx: discord_cmds.Context, nation: aionationstates.Nation = N
 
 # Loading & unloading:
 
-_jobs = []
+_jobs: List[IssueAnswerer] = []
 
 
 # called by discord.py on bot.load_extension()
-def setup(bot):
+def setup(bot: discord_cmds.Bot):
     bot.add_command(issues)
     bot.add_command(countdown)
     bot.add_command(scroll)
