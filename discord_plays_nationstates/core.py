@@ -7,7 +7,7 @@ import random
 import itertools
 
 # Typing
-from typing import Dict, List, Set
+from typing import Dict, List, Optional
 
 # External
 import aionationstates
@@ -224,19 +224,16 @@ class IssueAnswerer(object):
         return until_next_issue.total_seconds()
 
     async def issue_cycle(self):
-        remaining_issues = await self.nation.issues()
-        if not remaining_issues:
+        lookup_issue_by_msg = await self.get_issue_dict()
+        if not lookup_issue_by_msg:
             await self.channel.send('Nation has no issues.')
             return
 
-        next_issue = None
-        next_issue_message = None
-        issue: aionationstates.Issue
-        lookup_issue_by_msg = {f'Issue #{issue.id}:': issue for issue in remaining_issues}
-        logger.info('begin channel history scan, remaining issues %d', len(remaining_issues))
+        next_issue_message: Optional[discord.Message] = None
+        logger.info('Begin channel history scan, remaining issues %d', len(lookup_issue_by_msg))
 
         message: discord.Message
-        channel_guild_me = self.channel.guild.me
+        channel_guild_me: discord.Member = self.channel.guild.me
         earliest = datetime.datetime.now() - datetime.timedelta(days=2)
         async for message in self.channel.history(after=earliest):
             if message.author != channel_guild_me:
@@ -245,8 +242,8 @@ class IssueAnswerer(object):
             if message.content not in lookup_issue_by_msg:
                 continue
 
-            message_issue: aionationstates.Issue = lookup_issue_by_msg[message.content]
-            options_with_emoji = self.yield_options_with_emoji(message_issue)
+            issue: aionationstates.Issue = lookup_issue_by_msg.pop(message.content)
+            options_with_emoji = self.yield_options_with_emoji(issue)
             required_reactions = set(emoji for option, emoji in options_with_emoji)
             stated_reactions = set(reaction.emoji for reaction in message.reactions if reaction.me)
 
@@ -256,29 +253,29 @@ class IssueAnswerer(object):
                 await self.channel.send(message.content + ' is being replaced, all previous votes are discarded.')
                 continue
 
-            if len(remaining_issues) > 4:
-                winning_option = await self.vote_results(message, message_issue)
-                if message.pinned:
-                    await message.unpin()
-                await self.close_issue(message_issue, winning_option)
-                remaining_issues = await self.nation.issues()
+            if len(lookup_issue_by_msg) >= 4:
+                logger.info(f'Now collecting votes for the close of issue {message.content} {issue.title}.')
+                winning_option = await self.vote_results(message, issue)
+                await self.close_issue(issue, winning_option)
+                lookup_issue_by_msg = await self.get_issue_dict()
                 continue
 
-            if next_issue is None:
+            if next_issue_message is None:
                 next_issue_message = message
-                next_issue = message_issue
-            remaining_issues = [issue for issue in remaining_issues if issue.id != message_issue.id]
-            logger.info('Processed %s, remaining issues %d', f'{message.content} {message_issue.title}', len(remaining_issues))
+            logger.info('Issue %s ready, remaining issues %d', f'{message.content} {issue.title}', len(lookup_issue_by_msg))
 
-        if remaining_issues:
+        if lookup_issue_by_msg:
             nation_flag = await self.nation.flag()
-        while remaining_issues:
-            *remaining_issues, current_issue = remaining_issues
-            issue_message = await self.open_issue(current_issue, nation_flag)
+        for issue in lookup_issue_by_msg.values():
+            issue_message = await self.open_issue(issue, nation_flag)
             if next_issue_message is None:
                 next_issue_message = issue_message
 
         countdown_str = self.get_countdown_str()
+
+        if next_issue_message is None:
+            await self.channel.send(f'Next Issue message was lost. Pls fix <@{self.owner_id}>')
+            return
 
         await self.channel.send(countdown_str, reference=next_issue_message, mention_author=False)
 
@@ -290,6 +287,15 @@ class IssueAnswerer(object):
                 return
         msg_str = f'There are no votes yet <@{self.owner_id}>!'
         await self.channel.send(msg_str)
+
+    async def get_issue_dict(self):
+        lookup_issue_by_msg: Dict[str, aionationstates.Issue] = {}
+        for issue in await self.nation.issues():
+            id_str = f'Issue #{issue.id}:'
+            if id_str in lookup_issue_by_msg:
+                raise SystemExit(f'Issue id #{issue.id} was not unique.')
+            lookup_issue_by_msg[id_str] = issue
+        return lookup_issue_by_msg
 
     @staticmethod
     def yield_options_with_emoji(issue: aionationstates.Issue):
