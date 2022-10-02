@@ -22,16 +22,8 @@ logger = logging.getLogger('discord-plays-nationstates')
 
 # Helper functions:
 
-def html_to_md(html):
-    return (
-        html
-        .replace('*', '\*')
-        .replace('<i> ', ' <i>')
-        .replace(' </i>', '</i> ')
-        .replace('<i>', '*')
-        .replace('</i>', '*')
-        .replace('&quot;', '"')
-        )
+def html_to_md(html: str):
+    return html.replace('*', '\*').replace('<i> ', ' *').replace(' </i>', '* ').replace('&quot;', '"')
 
 
 EMOJIS = ('0⃣', '1⃣', '2⃣', '3⃣', '4⃣', '5⃣', '6⃣', '7⃣', '8⃣', '9⃣', '🔟')
