@@ -3,7 +3,6 @@ import asyncio
 import collections
 import datetime
 import logging
-import operator
 import random
 import itertools
 
@@ -44,24 +43,23 @@ def text_fragments(text: str, sep='. ', limit=1024):
     yield sep.join(fragment_list)
 
 
-def census_difference(census_change):
-    scale: aionationstates.CensusScaleChange
-    results = (
-        (scale.info.title, scale.pchange)
-        for scale in census_change)
-    results_sorted = sorted(results, key=lambda x: abs(x[1]), reverse=True)
-    sliced = itertools.islice(results_sorted, 11)
-    mapping = sorted(sliced, key=operator.itemgetter(1), reverse=True)
-    for title, percentage in mapping:
-        highlight = arrow = ' '
-        if percentage > 0:
+def census_difference(census_change_list: List[aionationstates.CensusScaleChange]):
+    results_sorted = sorted(census_change_list, key=lambda scale: abs(scale.pchange), reverse=True)
+    sliced = itertools.takewhile(lambda scale: abs(scale.pchange) > 0.01, results_sorted)
+    mapping = sorted(sliced, key=lambda scale: scale.pchange, reverse=True)
+    for census_change in mapping:
+        if census_change.pchange > 0:
+            percentage = census_change.pchange
             highlight = '+'
             arrow = '↑'
-        elif percentage < 0:
+        elif census_change.pchange < 0:
+            percentage = -census_change.pchange
             highlight = '-'
             arrow = '↓'
-        percentage = abs(percentage)
-        yield f'{highlight}{title:<35} {arrow}{percentage:.2f}%'
+        else:
+            percentage = 0.0
+            highlight = arrow = ' '
+        yield f'{highlight}{census_change.info.title:<35} {arrow}{percentage:.2f}%'
 
 
 # Bot class:
