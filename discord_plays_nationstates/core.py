@@ -7,7 +7,7 @@ import random
 import itertools
 
 # Typing
-from typing import Dict, List, Optional
+from typing import Dict, Iterator, List, Optional
 
 # External
 import aionationstates
@@ -43,22 +43,21 @@ def text_fragments(text: str, sep='. ', limit=1024):
     yield sep.join(fragment_list)
 
 
-def census_difference(census_change_list: List[aionationstates.CensusScaleChange]):
+def census_difference(census_change_list: List[aionationstates.CensusScaleChange], limit=1024):
     results_sorted = sorted(census_change_list, key=lambda scale: abs(scale.pchange), reverse=True)
-    sliced = itertools.takewhile(lambda scale: abs(scale.pchange) > 0.01, results_sorted)
-    mapping = sorted(sliced, key=lambda scale: scale.pchange, reverse=True)
+    character_limit: Iterator[aionationstates.CensusScaleChange] = itertools.islice(results_sorted, stop=limit // 44)
+    mapping = sorted(character_limit, key=lambda census_change: census_change.pchange, reverse=True)
     for census_change in mapping:
-        if census_change.pchange > 0:
+        if census_change.pchange > 0.005:
             percentage = census_change.pchange
             highlight = '+'
             arrow = '↑'
-        elif census_change.pchange < 0:
+        elif census_change.pchange < -0.005:
             percentage = -census_change.pchange
             highlight = '-'
             arrow = '↓'
         else:
-            percentage = 0.0
-            highlight = arrow = ' '
+            continue
         yield f'{highlight}{census_change.info.title:<35} {arrow}{percentage:.2f}%'
 
 
@@ -127,7 +126,8 @@ class IssueAnswerer(object):
 
         # Census:
         if issue_result.census:
-            text = '```diff\n' + '\n'.join(census_difference(issue_result.census)) + '\n```'
+            census_line_generator = census_difference(issue_result.census, limit=1024-6)
+            text = '```diff\n' + '\n'.join(census_line_generator) + '\n```'
             embed.add_field(name=':chart_with_upwards_trend::', inline=False, value=text)
 
         await self.channel.send('Legislation Passed:', embed=embed)
