@@ -45,7 +45,7 @@ def text_fragments(text: str, sep='. ', limit=1024):
 
 def census_difference(census_change_list: List[aionationstates.CensusScaleChange], limit=1024):
     results_sorted = sorted(census_change_list, key=lambda scale: abs(scale.pchange), reverse=True)
-    character_limit: Iterator[aionationstates.CensusScaleChange] = itertools.islice(results_sorted, stop=limit // 44)
+    character_limit: Iterator[aionationstates.CensusScaleChange] = itertools.islice(results_sorted, limit // 44)
     mapping = sorted(character_limit, key=lambda census_change: census_change.pchange, reverse=True)
     for census_change in mapping:
         if census_change.pchange > 0.005:
