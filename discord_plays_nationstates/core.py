@@ -43,22 +43,27 @@ def text_fragments(text: str, sep='. ', limit=1024):
     yield sep.join(fragment_list)
 
 
-def census_difference(census_change_list: List[aionationstates.CensusScaleChange], limit=1024):
+def census_difference(census_change_list: List[aionationstates.CensusScaleChange], sep='\r\n', limit=1024):
+    index: int = int(0)
+    change_list: List[str] = []
+    final_str = sep.join(change_list)
     results_sorted = sorted(census_change_list, key=lambda scale: abs(scale.pchange), reverse=True)
-    character_limit: Iterator[aionationstates.CensusScaleChange] = itertools.islice(results_sorted, limit // 44)
-    mapping = sorted(character_limit, key=lambda census_change: census_change.pchange, reverse=True)
-    for census_change in mapping:
+    for census_change in results_sorted:
         if census_change.pchange > 0.005:
-            percentage = census_change.pchange
-            highlight = '+'
-            arrow = '↑'
+            change_str = f'+{census_change.info.title:<35} ↑{census_change.pchange:.2f}%'
+            change_list.insert(index, change_str)
+            new_str = sep.join(change_list)
+            index += 1
         elif census_change.pchange < -0.005:
-            percentage = -census_change.pchange
-            highlight = '-'
-            arrow = '↓'
+            change_str = f'-{census_change.info.title:<35} ↓{-census_change.pchange:.2f}%'
+            change_list.insert(index, change_str)
+            new_str = sep.join(change_list)
         else:
             continue
-        yield f'{highlight}{census_change.info.title:<35} {arrow}{percentage:.2f}%'
+        if len(new_str) > limit:
+            break
+        final_str = new_str
+    return final_str
 
 
 # Bot class:
@@ -112,8 +117,8 @@ class IssueAnswerer(object):
             name = ':white_check_mark::-%d' % index
 
         # Effect line + reclassifications:
-        effect_line = issue_result.effect_line or 'issue was dismissed'
-        effect = f'{effect_line.capitalize()}.'
+        effect_line: str = issue_result.effect_line or 'issue was dismissed'
+        effect = effect_line.capitalize() + '.'
         if issue_result.reclassifications:
             reclassifications = ";\n".join(issue_result.reclassifications)
             effect += f'\n\n{reclassifications}.'
@@ -126,9 +131,8 @@ class IssueAnswerer(object):
 
         # Census:
         if issue_result.census:
-            census_line_generator = census_difference(issue_result.census, limit=1024-6)
-            text = '```diff\n' + '\n'.join(census_line_generator) + '\n```'
-            embed.add_field(name=':chart_with_upwards_trend::', inline=False, value=text)
+            census_lines = census_difference(issue_result.census, sep='\n', limit=1024-12)
+            embed.add_field(name=':chart_with_upwards_trend::', inline=False, value=f'```diff\n{census_lines}\n```')
 
         await self.channel.send('Legislation Passed:', embed=embed)
 
