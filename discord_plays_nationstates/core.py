@@ -35,15 +35,12 @@ EMOJIS = (
 
 
 def text_fragments(text: str, sep='. ', limit=1024):
-    fragment: str
-    fragment_list: List[str] = []
-    for fragment in text.split(sep):
-        if fragment_list and len(sep.join(fragment_list + [fragment])) > limit:
-            yield sep.join(fragment_list)
-            fragment_list = [fragment]
-        else:
-            fragment_list.append(fragment)
-    yield sep.join(fragment_list)
+    remaining = f'{text}{sep}'
+    while remaining:
+        fragment, *leftover = remaining[:limit].rsplit(sep, 1)
+        remaining = sep.join(leftover) + remaining[limit:]
+        assert fragment
+        yield fragment
 
 
 def census_difference(census_change_list: List[aionationstates.CensusScaleChange], sep='\r\n', limit=1024):
