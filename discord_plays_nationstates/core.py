@@ -21,7 +21,11 @@ logger = logging.getLogger('discord-plays-nationstates')
 # Helper functions:
 
 def html_to_md(html: str):
-    return html.replace('*', '\*').replace('<i> ', ' *').replace(' </i>', '* ').replace('&quot;', '"')
+    md = html \
+        .replace('<i> ', ' <i>').replace('<i>', '*') \
+        .replace(' </i>', '</i> ').replace('</i>', '*') \
+        .replace('*', '\*').replace('&quot;', '"')
+    return md
 
 
 EMOJIS = (
@@ -237,7 +241,7 @@ class IssueAnswerer(object):
 
         message: discord.Message
         channel_guild_me: discord.Member = self.channel.guild.me
-        earliest = datetime.datetime.now() - datetime.timedelta(days=2)
+        earliest = datetime.datetime.now() - datetime.timedelta(days=7)
         async for message in self.channel.history(after=earliest):
             if message.author != channel_guild_me:
                 continue
