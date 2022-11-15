@@ -3,6 +3,7 @@ import functools
 import traceback
 import logging
 import logging.config
+import pathlib
 
 # Typing
 from typing import Optional
@@ -12,6 +13,8 @@ import aionationstates
 import discord
 import discord.ext.commands as discord_cmds
 
+LOCAL_DIR = pathlib.Path(__file__).resolve().parent
+LOG_PATH = LOCAL_DIR.parent / "DiscordPlaysNationstates.log"
 LOGGING_CONFIG = {
     "version": 1,
     "formatters": {
@@ -20,25 +23,33 @@ LOGGING_CONFIG = {
             }
         },
     "handlers": {
-        "to_console": {
+        "to_file": {
             "level": logging.DEBUG,
+            "formatter": "standard",
+            "class": "logging.handlers.RotatingFileHandler",
+            "filename": LOG_PATH.as_posix(),
+            "maxBytes": 1 << 20,
+            "backupCount": 3,
+            },
+        "to_console": {
+            "level": logging.ERROR,
             "formatter": "standard",
             "class": "logging.StreamHandler"
             }
         },
     "loggers": {
         "discord": {
-            "handlers": ["to_console"],
+            "handlers": ["to_console", "to_file"],
             "level": logging.WARNING,
             "propagate": 0
             },
         "aionationstates": {
-            "handlers": ["to_console"],
+            "handlers": ["to_console", "to_file"],
             "level": logging.WARNING,
             "propagate": 0
             },
         "discord-plays-nationstates": {
-            "handlers": ["to_console"],
+            "handlers": ["to_console", "to_file"],
             "level": logging.DEBUG,
             "propagate": 0
             }
@@ -50,14 +61,14 @@ bot = discord_cmds.Bot(command_prefix='.', intents=intents)
 
 def main():
     import configparser
-    import pathlib
     config = configparser.ConfigParser()
-    config.read(pathlib.Path(__file__).parent / 'play_nationstates.ini')
+    config.read(LOCAL_DIR / 'play_nationstates.ini')
 
     aionationstates.set_user_agent(config['Bot']['useragent'])
 
     bot.load_extension('core')
     logging.config.dictConfig(LOGGING_CONFIG)
+    logger.info('Start')
     core = bot.extensions['core']
 
     config_guild = config['GuildNation']
@@ -88,6 +99,7 @@ def main():
             logger.error(error_str)
 
     bot.run(config['Bot']['token'])
+    logger.info('End')
 
 def _main():
     import argparse
