@@ -4,10 +4,9 @@ import collections
 import datetime
 import logging
 import random
-import itertools
 
 # Typing
-from typing import Dict, Iterator, List, Optional
+from typing import Dict, List, Optional
 
 # External
 import aionationstates
