@@ -181,6 +181,9 @@ class IssueAnswerer(object):
                 name = emoji + ':-%d' % index
             reactions.append(emoji)
 
+        while len(embed) > 6000:
+            for ndx, field in enumerate(embed.fields):
+                embed.set_field_at(ndx, name=field.name, value=field.value[:-3] + '..', inline=False)
         message: discord.Message = await self.channel.send(f'Issue #{issue.id}:', embed=embed)
         for emoji in reactions:
             await message.add_reaction(emoji)
