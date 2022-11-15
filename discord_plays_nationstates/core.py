@@ -242,14 +242,14 @@ class IssueAnswerer(object):
         message: discord.Message
         channel_guild_me: discord.Member = self.channel.guild.me
         earliest = datetime.datetime.now() - datetime.timedelta(days=7)
-        async for message in self.channel.history(after=earliest):
+        async for message in self.channel.history(limit=None, after=earliest):
             if message.author != channel_guild_me:
                 continue
 
             if message.content not in lookup_issue_by_msg:
                 continue
 
-            issue: aionationstates.Issue = lookup_issue_by_msg.pop(message.content)
+            issue = lookup_issue_by_msg.pop(message.content)
             options_with_emoji = self.yield_options_with_emoji(issue)
             required_reactions = set(emoji for option, emoji in options_with_emoji)
             stated_reactions = set(reaction.emoji for reaction in message.reactions if reaction.me)
@@ -295,8 +295,8 @@ class IssueAnswerer(object):
         msg_str = f'There are no votes yet <@{self.owner_id}>!'
         await self.channel.send(msg_str)
 
-    async def get_issue_dict(self):
-        lookup_issue_by_msg: Dict[str, aionationstates.Issue] = {}
+    async def get_issue_dict(self) -> Dict[str, aionationstates.Issue]:
+        lookup_issue_by_msg = {}
         for issue in await self.nation.issues():
             id_str = f'Issue #{issue.id}:'
             if id_str in lookup_issue_by_msg:
