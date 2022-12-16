@@ -1,0 +1,9 @@
+*.pyc
+build/*
+*.egg-info/*
+dist/*
+.vscode/*
+play_nationstates.ini
+py36dpn/*
+*.out
+*.log
